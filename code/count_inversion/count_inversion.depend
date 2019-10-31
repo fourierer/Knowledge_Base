@@ -1,0 +1,5 @@
+# depslib dependency file v1.0
+1568046726 source:c:\codeblocks\homework\count_inversion\main.cpp
+	<iostream>
+	<stdio.h>
+
