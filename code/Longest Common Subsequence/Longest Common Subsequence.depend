@@ -1,0 +1,7 @@
+# depslib dependency file v1.0
+1572800301 source:c:\codeblocks\homework\ojtest\longest common subsequence\main.cpp
+	<iostream>
+	<string>
+	<algorithm>
+	<stdio.h>
+
