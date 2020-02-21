@@ -667,15 +667,96 @@ Faster R_CNN由两个模块组成。第一个模块是深度全卷积网络用�
 
 
 
+分析比较R-CNN，SPP Net，Fast R-CNN以及Faster R-CNN的区别和联系(https://blog.csdn.net/v_JULY_v/article/details/80170182?utm_source=distribute.pc_relevant.none-task)
+
+R-CNN(Selective Search+CNN+SVM)
+
+R-CNN的简要步骤如下
+(1) 输入测试图像
+(2) 利用选择性搜索Selective Search算法在图像中从下到上提取2000个左右的可能包含物体的候选区域Region Proposal
+(3) 因为取出的区域大小各自不同，所以需要将每个Region Proposal缩放（warp）成统一的227x227的大小并输入到CNN，将CNN的fc层的输出作为特征
+(4) 将每个Region Proposal提取到的CNN特征输入到SVM进行分类
+
+SPP Net(ROI pooling)
+
+在R-CNN中，“因为取出的区域大小各自不同，所以需要将每个Region Proposal缩放（warp）成统一的227x227的大小并输入到CNN”。
+
+但warp/crop这种预处理，导致的问题要么被拉伸变形、要么物体不全，限制了识别精确度。例如一张16:9比例的图片硬是要Resize成1:1的图片，会导致图片失真。
+
+SPP Net的作者Kaiming He等人逆向思考，既然由于全连接FC层的存在，普通的CNN需要通过固定输入图片的大小来使得全连接层的输入固定。那借鉴卷积层可以适应任何尺寸，为何不能在卷积层的最后加入某种结构，使得后面全连接层得到的输入变成固定的呢？
+
+这个“化腐朽为神奇”的结构就是spatial pyramid pooling layer。下图便是R-CNN和SPP Net检测流程的比较：
+
+![spp net](/Users/momo/Documents/video/spp net.png)
+
+它的特点有两个:
+1.结合空间金字塔方法实现CNNs的多尺度输入。
+SPP Net的第一个贡献就是在最后一个卷积层后，接入了金字塔池化层，保证传到下一层全连接层的输入固定。换句话说，在普通的CNN机构中，输入图像的尺寸往往是固定的（比如224*224像素），输出则是一个固定维数的向量。SPP Net在普通的CNN结构中加入了ROI池化层（ROI Pooling），使得网络的输入图像可以是任意尺寸的，输出则不变，同样是一个固定维数的向量。
+
+2.只对原图提取一次卷积特征
+在R-CNN中，每个候选框先resize到统一大小，然后分别作为CNN的输入，这样是很低效的。而SPP Net根据这个缺点做了优化：只对原图进行一次卷积计算，便得到整张图的卷积特征feature map，然后找到每个候选框在feature map上的映射patch，将此patch作为每个候选框的卷积特征输入到SPP layer和之后的层，完成特征提取工作。
 
 
 
+Fast R-CNN(Selective Search+CNN+ROI)
+
+R-CNN的进阶版Fast R-CNN就是在R-CNN的基础上采纳了SPP Net方法，对R-CNN作了改进，使得性能进一步提高。
+
+R-CNN和Fast R-CNN的区别：
+
+先说R-CNN的缺点：即使使用了Selective Search等预处理步骤来提取潜在的bounding box作为输入，但是R-CNN仍会有严重的速度瓶颈，原因也很明显，就是计算机对所有region进行特征提取时会有重复计算，Fast-RCNN正是为了解决这个问题诞生的。
+
+![fastr-cnn](/Users/momo/Documents/video/fastr-cnn.png)
+
+与R-CNN框架图对比，可以发现主要有两处不同：一是最后一个卷积层后加了一个ROI pooling layer，二是损失函数使用了多任务损失函数(multi-task loss)，将边框回归Bounding Box Regression直接加入到CNN网络中训练。
+
+(1) ROI pooling layer实际上是SPP-NET的一个精简版，SPP-NET对每个proposal使用了不同大小的金字塔映射，而ROI pooling layer只需要下采样到一个7x7的特征图。对于VGG16网络conv5_3有512个特征图，这样所有region proposal对应了一个7*7*512维度的特征向量作为全连接层的输入。
+
+换言之，这个网络层可以把不同大小的输入映射到一个固定尺度的特征向量，而我们知道，conv、pooling、relu等操作都不需要固定size的输入，因此，在原始图片上执行这些操作后，虽然输入图片size不同导致得到的feature map尺寸也不同，不能直接接到一个全连接层进行分类，但是可以加入这个神奇的ROI Pooling层，对每个region都提取一个固定维度的特征表示，再通过正常的softmax进行类型识别。
+
+(2) R-CNN训练过程分为了三个阶段，而Fast R-CNN直接使用softmax替代SVM分类，同时利用多任务损失函数边框回归也加入到了网络中，这样整个的训练过程是端到端的(除去Region Proposal提取阶段)。
+
+也就是说，之前R-CNN的处理流程是先提proposal，然后CNN提取特征，之后用SVM分类器，最后再做bbox regression，而在Fast R-CNN中，作者巧妙的把bbox regression放进了神经网络内部，与region分类和并成为了一个multi-task模型，实际实验也证明，这两个任务能够共享卷积特征，并相互促进。
+
+![Fast R-CNN](/Users/momo/Documents/video/Fast R-CNN.png)
 
 
 
+Faster R-CNN(RPM+CNN+ROI)
 
+Fast R-CNN存在的问题：存在瓶颈：选择性搜索，找出所有的候选框，这个也非常耗时。需要找出一个更加高效的方法来求出这些候选框。
 
+解决：加入一个提取边缘的神经网络，也就说找到候选框的工作也交给神经网络来做。
 
+在Fast R-CNN中引入Region Proposal Network(RPN)替代Selective Search，同时引入anchor box应对目标形状的变化问题（anchor就是位置和大小固定的box，可以理解成事先设置好的固定的proposal）。
+
+具体做法：
+1.对整张图片输进CNN，得到feature map
+2.卷积特征输入到RPN，得到候选框的特征信息
+3.对候选框中提取出的特征，使用分类器判别是否属于一个特定类 
+4.对于属于某一类别的候选框，用回归器进一步调整其位置
+
+RPN简介：
+　　• 在feature map上滑动窗口
+　　• 建一个神经网络用于物体分类+框位置的回归
+　　• 滑动窗口的位置提供了物体的大体位置信息
+　　• 框的回归提供了框更精确的位置
+
+一种网络，四个损失函数;
+　　• RPN calssification(anchor good.bad)
+　　• RPN regression(anchor->propoasal)
+　　• Fast R-CNN classification(over classes)
+　　• Fast R-CNN regression(proposal ->box)
+
+问题：
+
+1)anchor(提前指定的region proposal)在RPN中如何使用？
+
+2)RPN如何得到框的位置？
+
+(可参考https://blog.csdn.net/gentelyang/article/details/80469553)
+
+3)如何理解框的回归？四个值微调到四个值，还是多个值回归到四个值？
 
 
 
