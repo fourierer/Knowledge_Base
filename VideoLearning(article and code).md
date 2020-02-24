@@ -722,7 +722,7 @@ R-CNN和Fast R-CNN的区别：
 
 
 
-Faster R-CNN(RPM+CNN+ROI)
+Faster R-CNN(RPN+CNN+ROI)
 
 Fast R-CNN存在的问题：存在瓶颈：选择性搜索，找出所有的候选框，这个也非常耗时。需要找出一个更加高效的方法来求出这些候选框。
 
@@ -770,7 +770,7 @@ https://github.com/rbgirshick/py-faster-rcnn
 
 **#################################################################**
 
-### GCN+I3D应用到视频分类中
+### GCN+I3D+Faster R-CNN+Non-local应用到视频分类中
 
 #### 论文：Videos as Space-Time Region Graphs
 
@@ -834,9 +834,29 @@ https://github.com/rbgirshick/py-faster-rcnn
 
 步骤：
 
-1)首先利用I3D网络提取视频的特征，最后一个卷积层的输出的视频特征是T×H×W×d.是视频帧数(时间维度)，H*W是feature map的空间维度，d是channel；
+1)首先利用I3D网络提取视频的特征，最后一个卷积层的输出的视频特征是T×H×W×d.是视频帧数(时间维度)，H*W是feature map的空间维度，d是channel。在用I3D卷积网络提取特征的时候，使用RPN提取框架(bounding box)；
 
-2)
+2)给定每个T特征帧的边界框，我们应用RoIAlign来提取每个边界框的特征。注意，RoIAlign是独立地应用于每个特性帧上的。每个object的特征向量有d维(首先将每帧上RoIAlign作用后的region proposal对齐到7\*7\*d，然后maxpooling到1\*1\*d)。我们将object编号表示为N，因此RoIAlign之后的特征维度为N*d(N的值为T帧上所有object的数量个数值)；
+
+3)我们现在构造一个包含N个节点的图，这些节点对应于在T帧上聚合的N个object proposals，为了简单起见，我们将这个大图分解为两个具有相同节点但有两个不同关系的子图:相似图和时空图。除了GCN特性外，我们还对整个视频表示进行平均池处理(T\*H\*W\*d)，以获得与全局特性相同的d维特性。然后将这两个特性连接起来进行视频级分类；
+
+问题：
+
+1)RPN和I3D如何结合使用？
+
+2)RoIAlign是什么？如何对每一帧使用？
+
+
+
+5.视频中图表示
+
+(介绍特征提取和图的构建构成)
+
+
+
+
+
+
 
 
 
