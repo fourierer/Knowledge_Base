@@ -834,7 +834,7 @@ https://github.com/rbgirshick/py-faster-rcnn
 
 步骤：
 
-1)首先利用I3D网络提取视频的特征，最后一个卷积层的输出的视频特征是T×H×W×d.是视频帧数(时间维度)，H*W是feature map的空间维度，d是channel。在用I3D卷积网络提取特征的时候，使用RPN提取框架(bounding box)；
+1)首先利用I3D网络提取视频的特征，最后一个卷积层的输出的视频特征是T×H×W×d.是视频帧数(时间维度)，H*W是feature map的空间维度，d是channel。在用I3D卷积网络提取特征之前，使用RPN提取框架(bounding box)；
 
 2)给定每个T特征帧的边界框，我们应用RoIAlign来提取每个边界框的特征。注意，RoIAlign是独立地应用于每个特性帧上的。每个object的特征向量有d维(首先将每帧上RoIAlign作用后的region proposal对齐到7\*7\*d，然后maxpooling到1\*1\*d)。我们将object编号表示为N，因此RoIAlign之后的特征维度为N*d(N的值为T帧上所有object的数量个数值)；
 
@@ -846,11 +846,37 @@ https://github.com/rbgirshick/py-faster-rcnn
 
 2)RoIAlign是什么？如何对每一帧使用？
 
+RoIAlign类似于RoIPooling，可以裁剪和规范object feature到相同的规模，Fast-RCNN中有介绍。
+
 
 
 5.视频中图表示
 
 (介绍特征提取和图的构建构成)
+
+5.1视频表示
+
+(1)3D ConvNet
+
+给定一段较长的视频(约5秒)，我们从中抽取32个视频帧，每两帧之间的时间长度相同，用一个3D ConvNet(ResNet-50 I3D model)来提取这些视频帧的特征。这个模型的输入是32\*224\*224，32帧，每一帧的空间规模是224*224；输出的feature map规模是16\*14\*14；
+
+(2)RPN
+
+先用RPN提取每个视频帧中感兴趣区域的bounding box，再输入到ResNet-50+I3D中；为了在最后一个卷积层的顶层提取对象特征，我们**将边界框从16个输入RGB帧(从32个I3D输入帧中采样，采样率为每2帧1帧)投射到16个输出特征帧**；
+
+(3)RoIAlign
+
+然后将16个带有bounding box的特征帧输入到RoIAlign(RoIAlign类似于RoIPooling，可以裁剪和规范object feature到相同的规模，Fast-RCNN中有介绍)，提取每个object proposal里的特征；将feature proposal池化到$7*7*d$的feature，再池化到$1*1*d$feature输出；
+
+问题：RoIAlign如何提取特征？卷积还是池化？
+
+
+
+5.2图的相似性
+
+
+
+
 
 
 
