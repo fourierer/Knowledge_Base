@@ -880,17 +880,37 @@ RoIAlign类似于RoIPooling，可以裁剪和规范object feature到相同的规
 
 
 
-
-
-
-
-
-
-
-
 ##### 二、代码复现：(复现I3D和GCN组合，即文章中table 4中的最后一行，上面其余几行可以注释相应的代码复现)
 
-1.something-something数据集
+1.数据集下载
+
+下载something-something数据集压缩文件，网站：https://20bn.com/datasets/something-something/v1，需要注册才能下载。
 
 something数据集是一个中等规模的数据集，是为了识别视频中的动作的，其甚至都不在意具体是什么实施了这个动作，又有谁承载了这个动作。其标注形式就是**Moving something down，Moving something up**这种。这也是数据集名字的由来。从我目前的阅读来看，这个数据集相对小众了一些，目前在V1上的结果少有top1超过50%，在V2上少有超过60%。V1/V2均有174个类别，分别有108499/220847个的视频。处理数据的时候一定要看准数据数量是否准确。发布于2017年。((https://zhuanlan.zhihu.com/p/69064522))
+
+下载25个压缩文件(压缩数据集)以及4个csv文件(标签信息)，
+
+(1)something-something-v1-label.csv中是174个类别的名称，如：
+
+Holding something
+
+Turning something upside down
+
+......
+
+(2)something-something-v1-train.csv和something-something-v1-validation.csv中存储训练集验证集的标签信息，如：
+
+100218;Something falling like a feather or paper
+
+24413;Unfolding something
+
+.......
+
+(3)something-something-v1-test.csv中只有视频类别的序号，没有标签
+
+**数据集可以不用下载到video/classification/data/something/raw当中，只需将解压后的数据集跟该文件夹建立一个超链接即可，因为后续写其他算法用到这个数据集的时候，就可以省去复制的时间。**
+
+
+
+2.数据集的解压与预处理
 
