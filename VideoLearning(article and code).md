@@ -908,9 +908,56 @@ Turning something upside down
 
 (3)something-something-v1-test.csv中只有视频类别的序号，没有标签
 
-**数据集可以不用下载到video/classification/data/something/raw当中，只需将解压后的数据集跟该文件夹建立一个超链接即可，因为后续写其他算法用到这个数据集的时候，就可以省去复制的时间。**
+**数据集可以不用下载到video/classification/data/something/raw当中，只需将解压后的数据集跟该文件夹建立一个超链接即可，因为一般数据集会放在一个统一的文件夹里面(比如服务器中的data文件夹，代码放在home文件夹)，并且后续写其他算法用到这个数据集的时候，就可以省去复制的时间。**
 
 
 
 2.数据集的解压与预处理
+
+(1)在数据集所在文件夹中解压数据
+
+```shell
+cat 20bn-something-something-v1-?? | tar zx
+```
+
+(2)创建超链接
+
+```shell
+ln -s 20bn-something-something-v1 .../video_classification/data/something/raw
+ln -s 20bn-something-something-v1 /home/sz/video_classification/eccv_wang//data/something/raw
+```
+
+(3)预处理
+
+video_classification/data/something/process.py
+
+```python
+import os
+import tqdm
+import pandas as pd
+import subprocess
+
+train = pd.read_csv('annotations/something-something-v1-train.csv', sep=';', header=None)
+validation = pd.read_csv('annotations/something-something-v1-validation.csv', sep=';', header=None)
+labels = pd.read_csv('annotations/something-something-v1-labels.csv', sep='\n', header=None)
+
+labels = dict((v,k) for k,v in labels[0].to_dict().items())
+
+train = train.replace({1: labels})
+validation = validation.replace({1: labels})
+
+
+for i in tqdm.tqdm(range(len(train))):
+    if not os.path.isdir('frames/train/{}'.format(train.loc[i][1])):
+        os.mkdir('frames/train/{}'.format(train.loc[i][1]))
+    cmd = 'mv raw/{} frames/train/{}'.format(train.loc[i][0], train.loc[i][1])
+    subprocess.call(cmd, shell=True)
+
+
+for i in tqdm.tqdm(range(len(validation))):
+    if not os.path.isdir('frames/valid/{}'.format(train.loc[i][1])):
+        os.mkdir('frames/valid/{}'.format(train.loc[i][1]))
+    cmd = 'mv raw/{} frames/valid/{}'.format(validation.loc[i][0], validation.loc[i][1])
+    subprocess.call(cmd, shell=True)
+```
 
