@@ -1,3 +1,5 @@
+
+
 # 文献阅读以及代码解读
 
 
@@ -912,24 +914,30 @@ Turning something upside down
 
 
 
-2.数据集的解压与预处理
+2.数据集的解压与整理
 
-(1)在数据集所在文件夹中解压数据
+(1)在数据集所在文件夹(something-something，自行设置)中解压数据
 
 ```shell
 cat 20bn-something-something-v1-?? | tar zx
 ```
 
+数据集解压之后something-something文件夹中出现20bn-something-something-v1的文件夹，里面共有108499个文件夹，共174个类别。每个类别文件夹中都是已经抽好帧的jpg图片，图片个数根据视频长短决定。
+
 (2)创建超链接
 
 ```shell
-ln -s 20bn-something-something-v1 .../video_classification/data/something/raw
-ln -s 20bn-something-something-v1 /home/sz/video_classification/eccv_wang//data/something/raw
+ln -s .../20bn-something-something-v1 .../video_classification/data/something/raw
+ln -s /data/sz/raw/something-somethng/20bn-something-something-v1 /home/sz/Video_Classification/eccv_wang/video_classification/data/something/raw
 ```
 
-(3)预处理
+在something-something文件夹下输入指令ln -s .../20bn-something-something-v1 .../video_classification/data/something/raw(下面的实例是我自己的服务器上的路径)，注意在建立软链接时，源文件和目标文件一定要是完整的绝对路径。回车之后在raw文件夹下面生成一个快捷方式文件夹20bn-something-something-v1，这个快捷方式文件夹并不占内存，但是可以访问到原来的20bn-something-something-v1里的所有内容。
+
+(3)整理数据集
 
 video_classification/data/something/process.py
+
+将/home/sz/Video_Classification/eccv_wang/video_classification/data/something/raw/20bn-something-something-v1中的数据集分为训练集和测试集两部分，此处的数据是从超链接的数据源中移动得到。
 
 ```python
 import os
@@ -940,24 +948,41 @@ import subprocess
 train = pd.read_csv('annotations/something-something-v1-train.csv', sep=';', header=None)
 validation = pd.read_csv('annotations/something-something-v1-validation.csv', sep=';', header=None)
 labels = pd.read_csv('annotations/something-something-v1-labels.csv', sep='\n', header=None)
+#print(type(validation))  # <class 'pandas.core.frame.DataFrame'>
+#print(labels)  # 174*1的DataFrame
+#print(labels[0])  # DataFrame的第一列
+#print(labels[0].to_dict().items())  # 将第一列的值和行号(类别)组成元组，元组再组成列表
 
 labels = dict((v,k) for k,v in labels[0].to_dict().items())
+#print(labels)  # 将第一列的值作为key，将行号(类别)作为value，组成字典
 
+# 将train和validation中第二列的类别描述，换成数字形式(1-174)
 train = train.replace({1: labels})
 validation = validation.replace({1: labels})
 
 
+# 将/home/sz/Video_Classification/eccv_wang/video_classification/data/something/raw/20bn-something-something-v1中的数据集分为训练集和测试集两部分，此处的数据是从超链接的数据源中移动得到
 for i in tqdm.tqdm(range(len(train))):
     if not os.path.isdir('frames/train/{}'.format(train.loc[i][1])):
-        os.mkdir('frames/train/{}'.format(train.loc[i][1]))
-    cmd = 'mv raw/{} frames/train/{}'.format(train.loc[i][0], train.loc[i][1])
+        os.makedirs('frames/train/{}'.format(train.loc[i][1]))
+    cmd = 'mv raw/20bn-something-something-v1/{} frames/train/{}'.format(train.loc[i][0], train.loc[i][1])
     subprocess.call(cmd, shell=True)
 
 
 for i in tqdm.tqdm(range(len(validation))):
     if not os.path.isdir('frames/valid/{}'.format(train.loc[i][1])):
-        os.mkdir('frames/valid/{}'.format(train.loc[i][1]))
-    cmd = 'mv raw/{} frames/valid/{}'.format(validation.loc[i][0], validation.loc[i][1])
+        os.makedirs('frames/valid/{}'.format(train.loc[i][1]))
+        cmd = 'mv raw/20bn-something-something-v1/{} frames/valid/{}'.format(validation.loc[i][0], validation.loc[i][1])
     subprocess.call(cmd, shell=True)
 ```
+
+移动之后，源文件就没有了训练和验证集，只有测试集。(可以通过解压再次得到所有数据集)
+
+
+
+3.特征提取
+
+
+
+
 
