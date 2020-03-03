@@ -928,7 +928,7 @@ cat 20bn-something-something-v1-?? | tar zx
 
 ```shell
 ln -s .../20bn-something-something-v1 .../video_classification/data/something/raw
-ln -s /data/sz/raw/something-somethng/20bn-something-something-v1 /home/sz/Video_Classification/eccv_wang/video_classification/data/something/raw
+ln -s /data/sz/raw/something-something/20bn-something-something-v1 /home/sz/Video_Classification/eccv_wang/video_classification/data/something/raw
 ```
 
 在something-something文件夹下输入指令ln -s .../20bn-something-something-v1 .../video_classification/data/something/raw(下面的实例是我自己的服务器上的路径)，注意在建立软链接时，源文件和目标文件一定要是完整的绝对路径。回车之后在raw文件夹下面生成一个快捷方式文件夹20bn-something-something-v1，这个快捷方式文件夹并不占内存，但是可以访问到原来的20bn-something-something-v1里的所有内容。
@@ -961,7 +961,7 @@ train = train.replace({1: labels})
 validation = validation.replace({1: labels})
 
 
-# 将/home/sz/Video_Classification/eccv_wang/video_classification/data/something/raw/20bn-something-something-v1中的数据集分为训练集和测试集两部分，此处的数据是从超链接的数据源中移动得到
+# 将/home/sunzheng/Video_Classification/eccv_wang/video_classification/data/something/raw/20bn-something-something-v1中的数据集分为训练集和测试集两部分，此处的数据是从超链接的数据源中移动得到
 for i in tqdm.tqdm(range(len(train))):
     if not os.path.isdir('frames/train/{}'.format(train.loc[i][1])):
         os.makedirs('frames/train/{}'.format(train.loc[i][1]))
@@ -980,7 +980,111 @@ for i in tqdm.tqdm(range(len(validation))):
 
 
 
-3.特征提取
+3.环境配置
+
+(1)根据detectron2/INSTALL.md安装[detectron2](https://github.com/facebookresearch/detectron2)
+
+这里采用的detectron2是facebook写的一个用于提取bounding box的一个库，由于比较新，所以对服务器上的环境要求比较高，值得注意的有以下几点(不会写轮子只能跟着别人要求走！)：
+
+1)Python >= 3.6，使用anaconda建立虚拟环境时可以解决；
+
+2)Pytorch >= 1.3，搭建pytorch和相应版本的torchvision(通过pytorch官网的指令)。在安装pytorch时，要注意：
+
+i).服务器的驱动版本(nvidia-smi查看)和cuda版本之间的兼容性(不兼容无法使用)；
+
+![cuda-driver_version](/Users/momo/Documents/video/cuda-driver_version.png)
+
+ii).cuda版本与pytorch版本兼容
+
+pytorch官网上可以看到。
+
+3)GCC >= 5.0
+
+如果服务器自带的GCC版本过低就需要升级，但是一般使用服务器的学生没有root权限，下面介绍没有root权限情况下升级GCC版本。
+
+在Linux下，如果有root权限的话，使用sudo apt install 就可以很方便的安装软件，而且同时也会帮你把一些依赖文件也给编译安装好。但是如果不是用的自己的机器，一般情况下是没有root 权限的。所以就需要自己动手下载tar文件，解压安装。在安装中遇到的最大的问题是依赖的问题。
+i)首先下载gcc压缩包并解压：
+
+在网址https://ftp.gnu.org/gnu/gcc找到需要下载的版本，这里选择gcc-5.5.0.tar.gz(不要下载太新的版本，可能会不支持，满足要求即可)，上传到服务器(我自己的服务器路径为/home/sunzheng/gcc-5.5.0.tar.gz);
+
+解压：
+
+```shell
+tar zxvf gcc-5.5.0.tar.gz
+```
+
+解压之后出现文件夹gcc-5.5.0；
+
+进入该文件夹（后续操作都在该解压缩文件夹中进行）；
+
+```shell
+cd gcc-5.5.0
+```
+
+ii)下载gcc，和gcc依赖的包到文件夹gcc-5.5.0中
+
+```shell
+./contrib/download_prerequisites
+```
+
+如果运行过程中出现错误，可以依次运行文件中每个命令，来安装或者解压gcc所依赖的包；
+
+iii)编译gcc
+
+在gcc解压缩根目录下(gcc-5.5.0下)新建一个文件夹，然后进入该文件夹配置编译安装：
+
+```shell
+mkdir objdir
+cd objdir
+../configure --disable-checking --enable-languages=c,c++ --disable-multilib --prefix=/path/to/install/gcc-5.4 --enable-threads=posix
+make -j64    # 多线程编译，否则很慢很慢很慢，能多开就多开几个线程
+make install
+```
+
+`path/to/install`就是要安装GCC的目录??
+
+iv)为当前用户配置系统环境变量
+
+打开～/.bashrc文件：
+
+```shell
+vim ~/.bashrc
+```
+
+在末尾加入：
+
+```shell
+export PATH=/path/to/install/gcc-5.5/bin:/path/to/install/gcc-5.5/lib64:$PATH
+export LD_LIBRARY_PATH=/path/to/install/gcc-5.5/lib/:$LD_LIBRARY_PATH
+```
+
+一定要确保安装路径在`$LD_LIBRARY_PATH`和`$PATH`之前，这样安装的程序才能取代之前系统默认的程序。同样地，也可以安装别的软件到自己的目录下并采用以上方式指定默认程序。
+
+更新bashrc文件：
+
+```shell
+source ~/.bashrc
+```
+
+或者重启shell.
+
+v)输入gcc -v检查版本
+
+至此gcc升级完成。
+
+
+
+(2)安装必要的package
+
+```shell
+pip install -r requirements.txt
+```
+
+
+
+4.特征提取
+
+
 
 
 
