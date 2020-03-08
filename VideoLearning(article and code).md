@@ -1169,14 +1169,14 @@ iii)编译gcc
 在gcc解压缩根目录下(gcc-5.5.0下)新建一个文件夹，然后进入该文件夹配置编译安装：
 
 ```shell
-mkdir objdir
-cd objdir
-../configure --disable-checking --enable-languages=c,c++ --disable-multilib --prefix=/path/to/install/gcc-5.4 --enable-threads=posix
+mkdir gcc-build
+cd gcc-build
+../configure --disable-checking --enable-languages=c,c++ --disable-multilib --prefix=/path/to/install --enable-threads=posix
 make -j64    # 多线程编译，否则很慢很慢很慢，能多开就多开几个线程
 make install
 ```
 
-`path/to/install`就是要安装GCC的目录??
+`path/to/install`就是要安装GCC的目录，比如我的服务器上就是/home/sunzheng/GCC-5.5.0，一定要是有安装权限的目录，所以第二条指令就是../configure --disable-checking --enable-languages=c,c++ --disable-multilib --prefix=/home/sunzheng/GCC-5.5.0 --enable-threads=posix
 
 iv)为当前用户配置系统环境变量
 
@@ -1189,8 +1189,15 @@ vim ~/.bashrc
 在末尾加入：
 
 ```shell
-export PATH=/path/to/install/gcc-5.5/bin:/path/to/install/gcc-5.5/lib64:$PATH
-export LD_LIBRARY_PATH=/path/to/install/gcc-5.5/lib/:$LD_LIBRARY_PATH
+export PATH=/path/to/install/bin:/path/to/install/lib64:$PATH
+export LD_LIBRARY_PATH=/path/to/install/lib/:$LD_LIBRARY_PATH
+```
+
+在我的服务器上就是：
+
+```shell
+export PATH=/home/sunzheng/GCC-5.5.0/bin:/home/sunzheng/GCC-5.5.0/lib64:$PATH
+export LD_LIBRARY_PATH=/home/sunzheng/GCC-5.5.0/lib/:$LD_LIBRARY_PATH
 ```
 
 一定要确保安装路径在`$LD_LIBRARY_PATH`和`$PATH`之前，这样安装的程序才能取代之前系统默认的程序。同样地，也可以安装别的软件到自己的目录下并采用以上方式指定默认程序。
@@ -1206,6 +1213,10 @@ source ~/.bashrc
 v)输入gcc -v检查版本
 
 至此gcc升级完成。
+
+![gcc](/Users/momo/Desktop/gcc.jpeg)
+
+
 
 
 
