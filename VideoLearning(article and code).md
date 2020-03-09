@@ -1019,7 +1019,7 @@ RoIAlign类似于RoIPooling，可以裁剪和规范object feature到相同的规
 
 ##### 二、代码复现：(复现I3D和GCN组合，即文章中table 4中的最后一行，上面其余几行可以注释相应的代码复现)
 
-1.数据集下载
+**1.数据集下载**
 
 下载something-something数据集压缩文件，网站：https://20bn.com/datasets/something-something/v1，需要注册才能下载。
 
@@ -1049,7 +1049,7 @@ Turning something upside down
 
 
 
-2.数据集的解压与整理
+**2.数据集的解压与整理**
 
 (1)在数据集所在文件夹(something-something，自行设置)中解压数据
 
@@ -1115,9 +1115,15 @@ for i in tqdm.tqdm(range(len(validation))):
 
 
 
-3.环境配置
+**3.环境配置**
 
 (1)根据detectron2/INSTALL.md安装[detectron2](https://github.com/facebookresearch/detectron2)
+
+安装之后可以conda  list查看安装列表，有detectron2库，结果如下：
+
+![conda list](/Users/momo/Documents/video/conda list.png)
+
+
 
 这里采用的detectron2是facebook写的一个用于提取bounding box的一个库，由于比较新，所以对服务器上的环境要求比较高，值得注意的有以下几点(不会写轮子只能跟着别人要求走！)：
 
@@ -1214,9 +1220,7 @@ v)输入gcc -v检查版本
 
 至此gcc升级完成。
 
-![gcc](/Users/momo/Desktop/gcc.jpeg)
-
-
+![gcc](/Users/momo/Documents/video/gcc.jpeg)
 
 
 
@@ -1228,7 +1232,68 @@ pip install -r requirements.txt
 
 
 
-4.特征提取
+**4.数据预处理**
+
+1生成文件索引
+
+```shell
+python parse_annotations.py
+```
+
+parse_annotations.py:
+
+```python
+import os
+import glob
+import tqdm
+import torch
+import numpy as np
+
+def parse_annotations(root):
+
+    def parse(directory):
+
+        data = []
+        for cls in tqdm.tqdm(os.listdir(directory)):  # 对train或者test文件夹中的类别做循环，cls是类别名称
+            cls = os.path.join(directory, cls)  #cls是类别路径
+            for frame_dir in os.listdir(cls):  # 对类别中视频文件夹做循环，frame_dir是视频文件夹
+
+                frame_dir = os.path.join(cls, frame_dir)  # frames_dir是视频文件夹路径
+
+                frames = glob.glob('%s/*.jpg'%(frame_dir))  # 返回视频文件夹中所有匹配的文件路径列表
+                if len(frames)<32:
+                    continue
+                frames = sorted(frames)
+                frames = [f.replace(root, '') for f in frames]
+                data.append({'frames':frames})
+        return data
+
+    train_data = parse('%s/frames/train'%root)  # train_data是一个列表，每一个值都是一个字典，这个字典只有一个键，对应的值是训练集中某个视频文件夹中所有帧图片的路径，且该视频文件夹超过32帧
+    val_data = parse('%s/frames/valid'%root)  # 同理，test_data存储测试集中大于32帧的视频文件夹中所有帧图片的路径
+
+    annotations = {'train_data':train_data, 'val_data':val_data}
+    torch.save(annotations, 'data/something_data.pth')
+
+# if not os.path.exists('data/something_data.pth'):
+parse_annotations('data/something')
+print ('Annotations created!')
+```
+
+该代码作用是将抽好帧的文件夹video_classification/data/frame中的训练集和测试集中的所有帧生成索引，保存在文件video_classification/data/something_data.pth中，可以查看something_data.pth文件中的内容(图中为一部分)：
+
+![something_data_pth](/Users/momo/Documents/video/something_data_pth.png)
+
+
+
+2.提取bounding box
+
+
+
+
+
+
+
+
 
 
 
