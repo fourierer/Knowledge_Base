@@ -225,6 +225,12 @@ optional arguments:
 
 
 
+#### 论文：3D convolutional neural networks for human action recognition
+
+
+
+
+
 #### 论文：Learning Spatiotemporal Features with 3D Convolutional Networks
 
 使用3D卷积核，直觉上更适合视频内容，但是无法使用二维卷积网络预训练权重，并且参数较多。
@@ -744,7 +750,7 @@ https://github.com/Tushar-N/pytorch-resnet3d
 
 **#################################################################**
 
-### Fast RCNN
+### Faster RCNN
 
 #### 论文：Faster R-CNN: Towards Real-Time Object Detection with Region Proposal Networks
 
@@ -1287,15 +1293,75 @@ print ('Annotations created!')
 
 2.提取bounding box
 
+提取的box将保存在data/something/bbox中，可以将demo/extract_box.py中73～77行注释取消，只提取部分frame的box，以加快速度：
+
+```shell
+cd detectron2
+python demo/extract_box.py
+```
+
+注意如果这一步如果报错：RuntimeError: CUDA error: no kernel image is available for execution on the device
+
+说明cuda无法使用，用下面两段代码验证：
+
+```python
+import torch
+print(torch.cuda.is_available())
+```
+
+如果输出True，说明CUDA安装正确并且能被Pytorch检测到，并没有说明是否正常使用，要想看Pytorch能不能调用cuda加速，还需要简单地测试：
+
+```python
+import torch
+a = torch.Tensor(5,3)
+a = a.cuda()
+print(a)
+```
+
+或者：
+
+```python
+import torch
+a = torch.Tensor(5,3)
+device = torch.device('cuda:0')
+a = a.to(device)
+print(a)
+```
+
+此时一般会报同样的错误，原因在于显卡算力和CUDA不匹配。要么更换显卡提高显卡算力，要么降低CUDA的版本。但是由于使用detectron2库对pytorch版本要求很高，所以CUDA版本没办法降低，这里建议使用高算力的显卡～～
 
 
 
+3.提取i3d的inference result
+
+提取的feature将保存在data/something/feats中，如果需要去掉non local block，可以将extract_feat.py第90行注释取消：
+
+```shell
+python extract_feat.py
+```
+
+当未下载i3d pertained weight时，应首先下载权重：
+
+```shell
+wget https://dl.fbaipublicfiles.com/video-nonlocal/i3d_baseline_32x2_IN_pretrain_400k.pkl -P pretrained/
+wget https://dl.fbaipublicfiles.com/video-nonlocal/i3d_nonlocal_32x2_IN_pretrain_400k.pkl -P pretrained/
+
+python -m utils.convert_weights pretrained/i3d_baseline_32x2_IN_pretrain_400k.pkl pretrained/i3d_r50_kinetics.pth
+python -m utils.convert_weights pretrained/i3d_nonlocal_32x2_IN_pretrain_400k.pkl pretrained/i3d_r50_nl_kinetics.pth
+```
 
 
 
+**5.训练**
 
+不同的GCN模型可从models/gcn_model.py第100, 101, 102行进行调整：
 
+```python
+python main.py
 
+# 从保存的第5 epoch权重开始训练
+python main.py --load_state 5
+```
 
 
 
@@ -1314,4 +1380,34 @@ print ('Annotations created!')
 
 
 
+
+
+
+**#################################################################**
+
+### 2D卷积，3D卷积，I3D，S3D-G以及R(2+1)D中卷积的运作机制比较
+
+#### 一、2D卷积
+
+2D卷积是最基础的卷积操作，2D卷积的时候注意多通道卷积，卷积核的通道数和信号的通道数是一样的，然后一个卷积核作用在原信号之后产生一个通道，多个卷积核作用在原信号之后产生多个通道。（下图为单通道卷积）
+
+![2D卷积](/Users/momo/Documents/video/2D卷积.gif)
+
+#### 二、3D卷积
+
+3D卷积多了一个**深度通道**，这个深度可能是**视频上的连续帧**，也可能是**立体图像中的不同切片**。3D卷积和多通道卷积有区别，多通道卷积在不同的通道上的卷积核参数是不同的，权重共享体现在空间上；而3D卷积本身卷积核就是3D的，所以在不同深度上滑动时用的是同一个卷积，权重共享主要体现在深度上。
+
+![3D卷积](/Users/momo/Documents/video/3D卷积.gif)
+
+如图所示，不同颜色假设是一个视频的不同帧，总体形成一个立方体视频信号，一个$3*3*3$的卷积核在立方体进行卷积，得到输出。
+
+下图是文章（3D convolutional neural networks for human action recognition）中的3D卷积神经网络：
+
+![3D卷积网络](/Users/momo/Documents/video/3D卷积网络.png)
+
+网络很浅，只有3个卷积层和1个全连接层，2个池化层，这样的网络规模和LeNet5差不多。不过3D多了一个维度，计算量多了很多。这里有两个3D卷积层，卷积核大小分别是7x7x3，7x6x3，前两维是空间的卷积，后一维是时间的卷积，看得出来，不需要保持一致，而且通常空间的卷积核大小和时间就不会一致，毕竟处理的“分辨率”不同。（第一层$7*7*3$是两个卷积核？导致C2层是$23*2@54*34$）
+
+
+
+#### 三、I3D
 
