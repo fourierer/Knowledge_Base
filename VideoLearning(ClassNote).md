@@ -112,7 +112,7 @@ UCF-50
 
 （3）目标分类和识别：
 
-物体分类：AlexNet(2012),VGG(2014),GoogleNet(2014),ResNet(2015),DenceNet(2016),现在已经取消了比赛，因为这个数据集已经起不到推动物体分类算法发展的作用了。
+物体分类：AlexNet(2012),VGG(2014),GoogleNet(2014),ResNet(2015),DenceNet(2016),2019年已经取消了比赛，因为这个数据集已经起不到推动物体分类算法发展的作用了。
 
 行人重识别（Person Re-identity）:
 
@@ -155,11 +155,45 @@ UCF,HMDB,Kinetics,something，这些数据集类别的定义实际上在一定�
 
 
 
-### 第三章、
+### 第三章、目标物体识别
+
+#### 一、总体介绍和发展历史
+
+1.总体介绍：物体识别包括领域
+
+物体分类：识别是否为飞机
+
+物体检测：用bounding box将飞机框出来
+
+物体分割：将飞机与背景图分割出来
+
+
+
+2.发展历史
+
+（1）1965-1980:配准（Alignment）
+
+需要在图中找出目标物体，特征点匹配（刚体配准相对简单），通过基元（geon）来匹配识别。
+
+（2）Eigenface（PCA）
+
+（3）sliding windows
+
+（4）1990-？local feature，基于特征
+
+（5）2000-？Parts and Structure
+
+（6）2003-present：bags of features models
+
+（7）global feature
+
+（8）2011-present：Deep Learning
 
 
 
 
+
+#### 二、典型方向和研究方法
 
 
 
