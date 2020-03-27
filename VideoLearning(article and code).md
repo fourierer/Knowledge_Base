@@ -100,6 +100,8 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # 设置当前使用的GPU设备仅为
 
 argparse是命令行参数解析模块，使用时需要import argparse，使用该工具可以直接在linux命令行中进行调参，不需要在.py文件中修改参数。下面进行测试说明该模块的用法。
 
+https://blog.csdn.net/huangfei711/article/details/80325946?depth_1-utm_source=distribute.pc_relevant.none-task&utm_source=distribute.pc_relevant.none-task， 链接中是各种情况，主要有：--和-都可以进行赋值，--是全称，-是缩写，不加-和--的表示必须要赋值参数；action=’store_true’，表示该选项不需要接收参数，直接设定该参数为 true。
+
 1).代码(Test.py)：
 
 ```python
@@ -137,7 +139,7 @@ x.add_argument('--lr',default=5e-4, type=float, metavar='LR', help='initial lear
 y = x.parse_args()
 print(y)
 print(y.epochs)
-print(y,lr)
+print(y.lr)
 ```
 
 测试命令1：$ python Test.py
@@ -160,7 +162,7 @@ Namespace(epochs=40, lr=0.0005)
 0.0005
 ```
 
-测试命令3：$ python Test.py --epoch 40 --lr 0.2
+测试命令3：$ python Test.py --epochs 40 --lr 0.2
 
 输出：
 
@@ -1254,13 +1256,81 @@ python main.py --load_state 5
 
 
 
+**#################################################################**
+
+### CSN
+
+#### 论文：Video Classification with Channel-Separated Convolutional Networks
+
+##### 一、论文理解
+
+1.简介
+
+（1）受到轻量级的2D卷积神经网络启发，在本文中将3D卷积操作替换成pointwise $1*1*1$或者depthwise $3*3*3$；
+
+（2）CSN网络中提出了两种分解，分别称为interaction-reduced和interaction-preserved；
+
+（3）CSN网络有更高的训练误差，但是也有更好的泛化性能。
+
+2.相关工作
+
+2.1.Group convolution
+
+各种轻量级卷积神经网络：Xception，MobileNet，ShuffleNet，ResNeXt...
+
+2.2.Video classification
+
+各种3D卷积分解方式：S3D，R(2+1)D...
+
+CSN和Xception非常相似，Xception在通道和空间上分解2D卷积，CSN在通道和时空上分解3D卷积；
+
+模型的变种ir-CSN与ResNeXt[39]及其3D版本[16]在使用瓶颈块进行组/深度卷积方面有相似之处。主要区别在于ResNext[39,16]在其3×3×3层中使用组卷积，组大小固定(如G = 32)，而我们的ir-CSN在所有3×3×3层中都使用深度卷积，这使得我们的架构完全是信道分离的；
+
+
+
+3.Channel-Separated Convolutional Networks
+
+3.1.background
+
+Group convolution
+
+![Group convolution](/Users/momo/Documents/video/Group convolution.png)
+
+传统卷积：输出的某个通道和输入的每一个通道有关，即卷积核与输入每一个通道都进行卷积运算；
+
+组卷积：输出的某个通道只和输入的固定几个通道有关，即卷积核与输入的固定的几个通道进行卷积运算；
+
+Depthwise convolution：输出的某个通道与输入的一个通道有关，即卷积核与输入的一个通道进行卷积运算；
+
+
+
+
+
+
+
+
+
+
+
+
+
+##### 二、代码复现
+
+
+
+
+
+
+
+
+
 
 
 
 
 **#################################################################**
 
-### 2D卷积，3D卷积，I3D，S3D-G以及R(2+1)D中卷积的运作机制比较
+### 2D卷积，3D卷积，I3D，S3D-G，R(2+1)D以及CSN中卷积的运作机制比较
 
 #### 一、2D卷积
 
@@ -1280,9 +1350,15 @@ python main.py --load_state 5
 
 ![3D卷积网络](/Users/momo/Documents/video/3D卷积网络.png)
 
-网络很浅，只有3个卷积层和1个全连接层，2个池化层，这样的网络规模和LeNet5差不多。不过3D多了一个维度，计算量多了很多。这里有两个3D卷积层，卷积核大小分别是7x7x3，7x6x3，前两维是空间的卷积，后一维是时间的卷积，看得出来，不需要保持一致，而且通常空间的卷积核大小和时间就不会一致，毕竟处理的“分辨率”不同。（第一层$7*7*3$是两个卷积核？导致C2层是$23*2@54*34$）
+网络很浅，只有3个卷积层和1个全连接层，2个池化层，这样的网络规模和LeNet5差不多。不过3D多了一个维度，计算量多了很多。这里有两个3D卷积层，卷积核大小分别是7x7x3，7x6x3，前两维是空间的卷积，后一维是时间的卷积，看得出来，不需要保持一致，而且通常空间的卷积核大小和时间就不会一致，毕竟处理的“分辨率”不同。（第一层$7*7*3$是两个卷积核，导致C2层是$23*2@54*34$）
 
 
 
 #### 三、I3D
+
+I3D实际上是利用了ImageNet上预训练的2D卷积网络的预训练结果，将2D卷积核进行膨胀，在时间维度上进行扩充T倍（T帧），然后整体除以T，作为一个3维的卷积核，剩下卷积的步骤和3D卷积的步骤是一致的（整体上参数量没有变化？只是利用了2D卷积的预训练结果？）
+
+
+
+
 
