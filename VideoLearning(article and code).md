@@ -1296,13 +1296,63 @@ Group convolution
 
 ![Group convolution](/Users/momo/Documents/video/Group convolution.png)
 
-传统卷积：输出的某个通道和输入的每一个通道有关，即卷积核与输入每一个通道都进行卷积运算；
+（1）传统卷积：输出的某个通道和输入的每一个通道有关，即卷积核与输入每一个通道都进行卷积运算；
 
-组卷积：输出的某个通道只和输入的固定几个通道有关，即卷积核与输入的固定的几个通道进行卷积运算；
+（2）组卷积：输出的某个通道只和输入的固定几个通道有关，即卷积核与输入的固定的几个通道进行卷积运算；
 
-Depthwise convolution：输出的某个通道与输入的一个通道有关，即卷积核与输入的一个通道进行卷积运算；
+（3）Depthwise convolution：输出的某个通道与输入的一个通道有关，即卷积核与输入的一个通道进行卷积运算；
 
 
+
+Counting FLOPS, parameters, and interactions
+
+给通道分组限制了通道之间的interaction，如果一个卷积层有$C_{in}$的通道数，分成$G$组，则每个核和$\frac{C_{in}}{G}$个通道相关，这些通道两两会有interaction，所以每个核涉及到$C_{\frac{C_{in}}{G}}^2$个interaction pairs。如下图所示：
+
+![interaction](/Users/momo/Documents/video/interaction.jpeg)
+
+
+
+计算各种量：
+
+(1)parameters:$C_{out}$个卷积核，每个卷积核需要卷$k$帧，每一帧有$\frac{C_{in}}{G}$个channels，所以共$C_{out}\cdot\frac{C_{in}}{G}\cdot k^3$个参数；
+
+(2)FLOPs:输出的每一个体素都通过$\frac{C_{in}}{G}\cdot k^3$次运算得到，共$C_{out}\cdot THW$个体素，共经过$C_{out}\cdot\frac{C_{in}}{G}\cdot k^3\cdot THW$；
+
+(3)interactions:一共有$C_{out}$个3D卷积核（$k*k*k$），这里$k$指帧数，3D卷积核每次卷$k$帧。对于输入层来说，每一帧有$C_{in}$个channel，每一帧的内部channel都有$C_{\frac{C_{in}}{G}}^2$个interaction pairs，所以$C_{out}$个卷积核共$C_{out}\cdot C_{\frac{C_{in}}{G}}^2$。
+
+
+
+3.2.Channel Separation
+
+传统3D卷积操作包括了通道间的交互（channel interactions）和像素与周边元素的交互（local interaction）。但是在CSN网络中，把传统3D卷积操作分成$1*1*1$的传统卷积和$k*k*$的depthwise convolution，把这两种卷积方式放到不同的卷积层中实现不同的interaction：
+
+（1）$1*1*1$传统卷积为了channel interaction，没有local interaction；
+
+（2）$k*k*k$depthwise convolution为了local interaction，没有channel interaction；
+
+实际上这部分对3D卷积操作的拆分（channel-separated）和MobileNet V1中对2D卷积
+
+完全一样，在2D中叫depth-separated，在这篇文章中叫channel-separated。
+
+
+
+3.3. Example: Channel-Separated Bottleneck Block
+
+![Channel-Separated Bottleneck Block](/Users/momo/Documents/video/Channel-Separated Bottleneck Block.png)
+
+Interaction-preserved channel-separated bottleneck block和Interaction-reduced channel-separated bottleneck block只是CSN中的两种结构，还有其他的block设计，3.4介绍。
+
+
+
+3.4. Channel Interactions in Convolutional Blocks
+
+Group convolution applied to ResNet blocks
+
+![Group convolution applied to ResNet blocks1](/Users/momo/Documents/video/Group convolution applied to ResNet blocks1.png)
+
+![Group convolution applied to ResNet blocks2](/Users/momo/Documents/video/Group convolution applied to ResNet blocks2.png)
+
+4. Ablation Experiment
 
 
 
@@ -1344,21 +1394,25 @@ Depthwise convolution：输出的某个通道与输入的一个通道有关，�
 
 ![3D卷积](/Users/momo/Documents/video/3D卷积.gif)
 
-如图所示，不同颜色假设是一个视频的不同帧，总体形成一个立方体视频信号，一个$3*3*3$的卷积核在立方体进行卷积，得到输出。
+如图所示，不考虑颜色的影响，假设输入是一个视频的9个帧，总体形成一个立方体信号，一个$3*3*3$的卷积核在立方体进行卷积，$3*3$是指空间上的卷积，第三维的$3$是指一次卷3帧，得到输出；如果是中间的层，仍然是卷3帧，只不过每一帧的channels数和上一层的卷积核数量一样，而不再是视频中的3个channels。
 
 下图是文章（3D convolutional neural networks for human action recognition）中的3D卷积神经网络：
 
 ![3D卷积网络](/Users/momo/Documents/video/3D卷积网络.png)
 
-网络很浅，只有3个卷积层和1个全连接层，2个池化层，这样的网络规模和LeNet5差不多。不过3D多了一个维度，计算量多了很多。这里有两个3D卷积层，卷积核大小分别是7x7x3，7x6x3，前两维是空间的卷积，后一维是时间的卷积，看得出来，不需要保持一致，而且通常空间的卷积核大小和时间就不会一致，毕竟处理的“分辨率”不同。（第一层$7*7*3$是两个卷积核，导致C2层是$23*2@54*34$）
+网络很浅，只有3个卷积层和1个全连接层，2个池化层，这样的网络规模和LeNet5差不多。不过3D多了一个维度，计算量多了很多。这里有两个3D卷积层，卷积核大小分别是7x7x3，7x6x3，前两维是空间的卷积，后一维是时间的卷积（每次卷3帧或者卷3个feature map），看得出来，不需要保持一致，而且通常空间的卷积核大小和时间就不会一致，毕竟处理的“分辨率”不同。（第一层$7*7*3$是两个卷积核，导致C2层是$23*2@54*34$，这里的2个卷积核表示C2层中每一帧实际上是2个channel，即C2层是23帧，每一帧是2个channel，每个channel都是54*34的）
 
 
 
 #### 三、I3D
 
-I3D实际上是利用了ImageNet上预训练的2D卷积网络的预训练结果，将2D卷积核进行膨胀，在时间维度上进行扩充T倍（T帧），然后整体除以T，作为一个3维的卷积核，剩下卷积的步骤和3D卷积的步骤是一致的（整体上参数量没有变化？只是利用了2D卷积的预训练结果？）
+I3D实际上是利用了ImageNet上预训练的2D卷积网络的预训练结果，将2D卷积核进行膨胀，在时间维度上进行扩充t倍（不是T帧），扩充的参数和2D是一致的，然后整体除以t，作为一个3维的卷积核，剩下卷积的步骤和3D卷积的步骤是一致的。
 
 
 
+#### 四、S3D-G
 
+#### 五、R(2+1)D
+
+#### 六、CSN
 
