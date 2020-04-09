@@ -2,6 +2,14 @@
 
 # 文献阅读以及代码解读
 
+专业术语：
+
+（1）frames：视频帧；
+
+（2）clips：一个视频的片段会很长，需要sample很多个短的clips，最后的预测结果是所有clip平均的结果，可以理解为一个clip就是一次sample。比如一个视频有200帧，设定一个clip要sample32帧，此时不能uniform sample，这样帧的间隔会很大，一般每两帧sample一帧，所以一个clip覆盖了64帧。这样一个视频就可以sample很多个clips；
+
+（3）crop：裁剪，在Image Recognition中，预处理都需要crop来做数据增强，video classification也是一样，可以对不同的clips进行crop，这样最终的crops=clips*crop，来得到更多的clips。
+
 
 
 #################################################################
@@ -1256,6 +1264,110 @@ python main.py --load_state 5
 
 
 
+
+
+**#################################################################**
+
+### ResNet3D
+
+#### 论文1：Learning Spatio-Temporal Features with 3D Residual Networks for Action Recognition
+
+##### 一、论文理解
+
+1.简介
+
+将2DResNet拓展到3D，在Activity和Kinetics数据集上进行训练和测试。
+
+
+
+2.相关工作
+
+2.1. Action Recognition Database
+
+（1）HMDB-51和UCF-101是不太大的数据集，在这两个数据集上很难训练出表现好的模型；
+
+（2）Sports-1M和YouTube-8M是很大的数据集，但是标注存在噪声，即视频中有很多帧与标签的内容无关，会对训练造成影响；
+
+（3）Kinetics数据集比Sports-1M和Youtube-8M小，但是标注质量非常高。
+
+
+
+2.2. Action Recognition Approach
+
+（1）双流网络、以及双流中每一流都使用2DResNet；
+
+（2）C3D；
+
+（3）I3D，使用了2D网络在ImageNet上的预训练结果；
+
+（4）inception系列网络应用到3D中；
+
+（5）这篇文章是将ResNet应用到3D中；
+
+
+
+3.3D Residual Networks
+
+3.1. Network Architecture
+
+
+
+![3DResNet](/Users/momo/Documents/video/3DResNet.png)
+
+
+
+3.2. Implementation
+
+3.2.1 Training
+
+使用带momentum的SGD训练，输入的视频是16帧，不够16帧的循环视频。
+
+Training sample？？
+
+
+
+3.2.2 Recognition
+
+
+
+4.Experiments 
+
+（1）ActivityNet![Result on ActivityNet](/Users/momo/Documents/video/Result on ActivityNet.png)
+
+在小数据集上，3DResNet容易过拟合，在Sports-1M上预训练过的C3D效果更好。
+
+
+
+（2）Kinetics
+
+![Result on Kinetics](/Users/momo/Documents/video/Result on Kinetics.png)
+
+3DResNet-34在没有预训练的情况下，在Kinetics数据集上的表现比在Sports-1M预训练的C3D要好。
+
+
+
+#### 论文2：**Can Spatiotemporal 3D CNNs Retrace the History of 2D CNNs and ImageNet?**
+
+实验部分：
+
+（1）各个网络结构在Kinetics数据集上的表现：
+
+![3DResNet Kinetics](/Users/momo/Documents/video/3DResNet Kinetics.png)
+
+
+
+（2）各个网络结构在Kinetics数据集上预训练，在UCF-101和HMDB-51上微调：
+
+![3DResNet Kinetics pretrained](/Users/momo/Documents/video/3DResNet Kinetics pretrained.png)
+
+
+
+##### 二、代码复现（https://github.com/kenshohara/3D-ResNets-PyTorch）
+
+
+
+
+
 **#################################################################**
 
 ### CSN
@@ -1354,17 +1466,83 @@ Group convolution applied to ResNet blocks
 
 4. Ablation Experiment
 
+Two main findings:
+
+(1)相似的网络深度和channel interaction的数量，会有相似的准确率，interaction-preserving blocks显著地减少了计算量，对于浅层网络只有轻微的精度损失，而对于更深层的网络则有精度的提高；
+
+(2)传统的3D卷积一帧里面的各个channel之间都有interaction，对于深层网络，这会造成过拟合。
 
 
 
+4.1. Experimental setup
+
+1.Dataset：Kinetics是行为识别的一个标准的benchmark，240K的训练数据，20K的验证集；
+
+2.Base architecture：以ResNet3D作为基础框架，模型输入的规模是$T*224*224$。
+
+![ResNet3D architectures](/Users/momo/Documents/video/ResNet3D architectures.png)
+
+结构中的ResNet3D-simple和ResNet3D-bottleneck中的单元分别是Figure-3a和Figure-4a中的simple和bottleneck。
 
 
 
+4.2. Reducing FLOPs, preserving interactions
+
+![Channel-Separated Networks vs ResNet3D](/Users/momo/Documents/video/Channel-Separated Networks vs ResNet3D.png)
+
+比较不同深度下ResNet3D，ir-CSn和ip-CSN的表现，结果正如第4节开头描述的：相似的网络深度和channel interaction的数量，会有相似的准确率，interaction-preserving blocks显著地减少了计算量，对于浅层网络只有轻微的精度损失，而对于更深层的网络则有精度的提高。
+
+实验结果：
+
+1.对于浅层网络，ir-CSN和ip-CSN的表现都不如ResNet-3D。此时ResNet-3D效果好得益于参数比较多，并且ip-CSN表现比ir-CSN要好，因为保留了channel-interaction在一定程度上提高了准确率；
+
+2.对于深层网络，ir-CSN和ip-CSN都比ResNet-3D要表现好。并且ir-CSN和ip-CSN的差距在缩小，因为channel interactions的数量几乎一样。
 
 
 
+结论：channel interactions和模型的表现联系密切，但flops不是。所以模型应该减少flops，保留channel interaction。
 
-##### 二、代码复现
+
+
+4.3. What makes CSNs outperform ResNet3D?
+
+与ResNet3D相比，ip-CSN具有更高的训练误差，但更低的测试误差(见表2)。这表明，CSN中的channel-separated使模型正则化，避免了过拟合。
+
+
+
+4.4. The effects of different blocks in group convolutional networks
+
+用sectionr3.4中的结构去替换ResNet3D中的卷积块做一些实验，实验图如下：![ResNet3D accuracy:computation tradeoff by transforming group convolutional blocks](/Users/momo/Documents/video/ResNet3D accuracy:computation tradeoff by transforming group convolutional blocks.png)
+
+解读：
+
+1.simple block只有2层，bottleneck block有3层，simple-X-8是用simple-X替换的resnet-18中的block，simple-X-16是用simple-X替换的resnet-34中的block；bottleneck-X-8是用bottleneck-X替换的resnet-26中的block，bottleneck-X-16是用bottleneck-X替换的resnet-50中的block；
+
+2.图中不同的标志表示不同的结构，相同的标志表示相同的结构，并且相同的标志对应的结构中一定是有group-convolution。可以调节组卷积的参数G，所以才会有不同的GFLOPs；
+
+3.从右往左看，对于浅层网络（resnet-18,24,36）由于浅层网络参数数量导致的能力限制，计算量减小（减小参数数量或者增加组卷积的组数），网络表现越差；对于深层网络（resnet-50），观察右边图的红色曲线：首先从标准卷积bottleneck出发，变为bottleneck-G，增加group的数量，此时参数减少，interaction减少，效果提升一直提升；到bottleneck-D，效果达到最好（green star对应的位置），变为bottleneck-DG，再增加group的数量，效果开始下降了；
+
+4.从这个图中说明，选择网络结构需要一个accuracy和computation之间的tradeoff，作者认为bottleneck-D是最好的一个结构，这个结构恰好是ir-CSN。
+
+
+
+5.Comparison with the State-of-the-Art
+
+（1）数据集Sports1M
+
+![Comparison with state-of-the-art architectures on Sports1M](/Users/momo/Documents/video/Comparison with state-of-the-art architectures on Sports1M.png)
+
+（2）数据集Kinetics
+
+![Comparison with state-of-the-art architectures on Ki- netics](/Users/momo/Documents/video/Comparison with state-of-the-art architectures on Ki- netics.png)
+
+（3）数据集something-something(V1)
+
+![Comparisons with state-of-the-art methods on Something2-V1](/Users/momo/Documents/video/Comparisons with state-of-the-art methods on Something2-V1.png)
+
+
+
+##### 二、代码复现（https://github.com/facebookresearch/VMZ）
 
 
 
@@ -1380,7 +1558,7 @@ Group convolution applied to ResNet blocks
 
 **#################################################################**
 
-### 2D卷积，3D卷积，I3D，S3D-G，R(2+1)D以及CSN中卷积的运作机制比较
+### 2D卷积，3D卷积，I3D，ResNet3D，S3D-G，R(2+1)D以及CSN中卷积的运作机制比较
 
 #### 一、2D卷积
 
@@ -1410,9 +1588,17 @@ I3D实际上是利用了ImageNet上预训练的2D卷积网络的预训练结果�
 
 
 
-#### 四、S3D-G
+#### 四、ResNet3D
 
-#### 五、R(2+1)D
 
-#### 六、CSN
+
+#### 五、S3D-G
+
+#### 六、R(2+1)D
+
+#### 七、CSN
+
+将3DResNet中bottleneck中的$3*3*3$convolution替换成$1*1*1$的conventional convolution以及$3*3*3$的depthwise convolution。
+
+![Channel-Separated Bottleneck Block](/Users/momo/Documents/video/Channel-Separated Bottleneck Block.png)
 
