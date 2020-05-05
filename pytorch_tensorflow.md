@@ -208,6 +208,121 @@ def forward(self, x):
 
 3.resnet模块
 
+resnet中有两个基本的block，一个是$3*3$+$3*3$，称为basic block；另一个是$1*1$+$3*3$+$1*1$，称为bottleneck。这里先写两个残差结构block，然后再搭建整个网络：
+
+```python
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+#用于ResNet-18和34的残差块，用的是3*3+3*3的卷积
+class BasicBlock(nn.Module):
+    expansion = 1
+    def __init__(self, in_planes, planes, stride=1):
+        super(BasicBlock, self).__init__()
+        self.conv1 = nn.Conv2d(in_planes, planes, kernel_size=3,
+                               stride=stride, padding=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(planes)
+        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3,
+                              stride=1, padding=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(planes)
+        self.shortcut = nn.Sequential()
+        # 经过非shortcut分支处理之后，输入信号x的通道数会发生变化，所以需要在s hortcut分支对通道数做处理，变换为统一维度才可以相加
+        if stride != 1 or in_planes != self.expansion*planes:
+            self.shortcut = nn.Sequentisl(
+                nn.Conv2d(in_planes, self.expansion*planes,
+                           kernel_size=1, stride=stride, bias=False),
+                nn.BatchNorm2d(self.expansion*planes))
+    def forward(self, x):
+        out = F.relu(self.bn1(self.conv1(x)))
+        out = self.bn2(self.conv2(out))
+        out += self.shortcut(x)
+        out = F.relu(out)
+        return out
+   
+# 用于ResNet-50，101，152的残差块，用的是1*1+3*3+1*1的卷积
+class Bottleneck(nn.Module):
+    # 前面1*1和3*3卷积的fliter个数相等，最后1*1卷积是其的expansion倍
+    expansion = 4
+    
+    def __init__(self, in_planes, planes, stride=1):
+        super(Bottleneck, self).__init__()
+        self.conv1 = nn.Conv2d(in_planes, planes, kernel_size=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(planes)
+        self.conv2d = nn.Conv2d(planes, planes, kernel_size=3,
+                                stride=stride, padding=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(planes)
+        self.conv3 = nn.Conv2d(planes, self.expansion*planes, 
+                               kernel_size=1, bias=False)
+        self.bn3 = nn.BatchNorm2d(self.expansion*planes)
+        
+        self.shortcut = nn.Sequential()
+        if stride != 1 or in_planes != self.expanson*planes:
+            self.shortcut = nn.Sequential(
+                nn.Conv2d(in_planes, self.expansion*planes, 
+                          kernel_size=1, stride=stride, bias=False),
+                nn.BatchNorm2d(self.expansion*planes))
+            
+    def forward(self, x):
+        out = F.relu(self.bn1(self.conv1(x)))
+        out = F.relu(self.bn2(self.conv2(out)))
+        out = self.bn3(self.conv3(out))
+        out +=self.shortcut(x)
+        out = F.relu(out)
+        return out
+      
+# 搭建ResNet网络
+class ResNet(nn.Module):
+    def __init__(self, block, num_blocks, num_classes=10):
+        super(ResNet, self).__init__()
+        self.in_planes = 64
+        # 输入之后第一个卷积层
+        self.conv1 = nn.Conv2d(3, 64, kernel_size=3,
+                               stride=1, padding=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(64)
+        
+        self.layer1 = self._make_layer(block, 64, num_blocks[0], stride=1)
+        self.layer2 = self._make_layer(block, 128, numblock[1], stride=2)
+        self.layer3 = self._make_layer(block, 256, num_block[2], stride=2)
+        self.layer4 = self._make_layer(block, 512, num_block[3], stride=2)
+        # 最后一层为全连接层
+        self.linear = nn.Linear(512*block.expansion, num_classes)
+        
+    def _make_layer(self, block, planes, num_blocks, stride):
+        strides = [stride] + [1]*(num_blocks-1)
+        layers = []
+        for stride in strides:
+            layers.append(block(self.in_planes, planes, stride))
+            self.in_planes = planes * block.expansion
+        return nn.Sequential(*layers)
+  
+    def forward(self,x):
+      out = F.relu(self.bn1(self.conv1(x)))
+      out = self.layer1(out)
+      out = self.layer2(out)
+      out = self.layer3(out)
+      out = self.layer4(out)
+      out = F.avg_pool2d(out, 4)
+      out = out.view(out.size[0], -1)
+      out = self.linear(out)
+      return out
+        
+def ResNet18():
+    return ResNet(BasicBlock, [2, 2, 2, 2])
+  
+def ResNet34():
+    return Resnet(BasicBlock, [3, 4, 6, 3])
+
+def ResNet50():
+    return ResNet(Bottleneck, [3, 4, 6, 3])
+
+def ResNet101():
+    return ResNet(Bottleneck, [3, 4, 23, 3])
+
+def ResNet152():
+    return ResNet(Bottleneck, [3, 8, 36, 3])
+```
+
 
 
 4.resnet-3D
@@ -215,6 +330,93 @@ def forward(self, x):
 
 
 5.ip-CSN
+
+
+
+6.使用训好的模型来测试单个图像和视频
+
+（1）测试图像
+
+```python
+import torch
+import torchvision
+from PIL import Image
+from torchvision import transforms
+from torch.utils.data import DataLoader
+from ghost_net import ghost_net
+import time
+
+device = torch.device('cuda')
+
+
+# 数据预处理
+data_transform = transforms.Compose([
+    transforms.Resize(224),  # 改变图像大小，作为224*224的正方形
+    transforms.CenterCrop(224),  # 以图像中心进行切割，参数只有一个要切成正方形>转
+    transforms.ToTensor(),  # 把一个取值范围是[0,255]的PIL.Image或者shape为(H,W,C)的numpy.ndarray，
+    # 转换成形状为[C,H,W]，取值范围是[0,1]的torch.FloadTensor
+    transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                         std=[0.229, 0.224, 0.225])  # 给定均值：(R,G,B) 方差：>（R，G，B），将会把Tensor正则化。
+    # 即：Normalized_image=(image-mean)/std。
+])
+
+
+
+# 加载模型
+print('load model begin!')
+model = ghost_net(width_mult=1.0)
+checkpoint = torch.load('./model_best.pth.tar')
+model.load_state_dict(checkpoint['state_dict'])
+model.eval()  # 固定batchnorm，dropout等，一定要有
+model= model.to(device)
+print('load model done!')
+
+
+
+# 测试单张图像
+img = Image.open('/home/sz/model_eval/panda.jpg')
+img = data_transform(img)
+#img = torch.Tensor(1,3,224,224) #如果只是测试时间，直接初始化一个Tensor即可
+print(type(img))
+print(img.shape)
+img = img.unsqueeze(0) # 这里直接输入img不可，因为尺寸不一致，img为[3,224,224]的Tensor，而模型需要[1,3,224,224]的Tensor
+print(type(img))
+print(img.shape)
+
+time_start = time.time()
+img_= img.to(device)
+outputs = model(img_)
+time_end = time.time()
+time_c = time_end - time_start
+_, predicted = torch.max(outputs,1)
+print('this picture maybe:' + str(predicted))
+print('time cost:', time_c, 's')
+
+'''
+# 批量测试验证集中的图像，使用dataloader，可以更改batch_size调节测试速度
+print('Test data load begin!')
+test_dataset = torchvision.datasets.ImageFolder(root='/home/momo/mnt/data2/datum/raw/val2', transform=data_transform)
+test_data = DataLoader(test_dataset, batch_size=1, shuffle=True, num_workers=4)
+print(type(test_data))
+print('Test data load done!')
+
+torch.no_grad()
+for img1, label1 in test_data:
+    img1 = img1.to(device)
+    label1 = label1.to(device)
+    out = model(img1)
+
+    _, pred = out.max(1)
+    print(pred)
+    print(label1)
+    num_correct = (pred == label1).sum().item()
+    acc = num_correct / img1.shape[0]
+    print('Test acc in current batch:' + str(acc))
+    eval_acc +=acc
+
+print('final acc in Test data:' + str(eval_acc / len(test_data)))
+'''
+```
 
 
 
