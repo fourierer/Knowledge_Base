@@ -651,17 +651,79 @@ RPN：使用锚点（anchor），类似于滑动窗口的方法找到候选区�
 
 #### 3.实例分割
 
+1.数据集：
+
+（1）ImageNet(类别多，但物体都位于正中间)；
+
+（2）PASCAl VOC(类别少，只有20个类别)；
+
+（3）SUN；
+
+（4）MS COCO(91类，三万多幅图像，包含单个物体实例标注比较多，不像ImageNet那样，MS COCO一副图中可能有很多类别的物体)。MS COCO数据集中存在一些问题，如
+
+1）标注不明，比如人和背包标注为一类；
+
+2）未达到实例级标注，比如多人合影，并没有标注出每个人；
+
+（5）Cityscapes数据集
+
+自动驾驶数据集，包含了五十多个城市的街景，主要关心交通中的各个物体
+
+（6）ADE20K-Scene Parsing Dataset，150类，2万张图像
+
+
+
+2.代表性方法
+
+（1）早期方法：DeepMask，ISFCN
+
+（2）Top-down methods and bottom-up methods
+
+Top-down methods：基于检测的方法(检测是定位物体的位置，实例分割需要给出出每个像素点的label)；
+
+这类方法基本都是在物体检测的bounding box之上增加mask prediction模块，检测时即实现不同不同instance的区分，在检测框内进一步区分前景和背景，这类方法往往可以取得好的效果；
+
+主要方法有：SDS，MNCs，FCIS，Mask R-CNN，MaskLab，PANet；
+
+Bottom-up methods：基于分割的方法（基于聚类的方法，Clustering based methods）
+
+首先进行像素级别的语义分割，再进一步区分不同的instance（即先区分像素的类别，再区分同一类别里面具体是哪个instance）；
+
+
+
+（3）Single shot instance segmentation（单阶段实例分割）
+
+主要方法有：TensorMask，PolarMask，SOLO（联系YOLO）
+
+思路受one-stage detector启发，非常有启发性，轮廓较为粗糙，性能不如其他方法，但相比于bottom-up模型（基于分割的模型）和top-down模型（基于检测的模型），其计算框架大大简化。
+
 
 
 #### 4.全景分割
 
+深度学习在计算机视觉发展领域：
 
+classification(2012年AlexNet)
 
+detection(2015年Faster R-CNN)
 
+instance segmentation(2017年Mask R-CNN)
 
+Panoptic Segmentation(2019年)
 
+代表性方法：
 
+（1）Mask R-CNN+PSPNet Combination Heuristic
 
+（2）Obiect Context Network
+
+（3）Panoptic FPN（2019年cvpr）
+
+（4）UPSNet
+
+（5）Panoptic DeepLab
+
+最直接的思路就是在semantic segmentation和instance segmentation的基础上添加后处理模块，实现panoptic segmentation
 
 
 
