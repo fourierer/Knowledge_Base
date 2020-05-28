@@ -409,9 +409,79 @@ C3D有一个非常重要的特征:它们直接创建时空数据的层次表示�
 
 通过分解3D卷积来减少3D卷积网络的卷积核参数，网络深度比3D卷积网络更深，性能更好。
 
+##### 一、论文理解
+
+1.简介
+
+（1）深度网络I3D目前在动作识别方面的效果最好，但与最佳手工方法iDT相比，改进的幅度并不像图像分类那样巨大；
+
+（2）基于图像的2D CNN (ResNet-152)操作在视频的单独帧上实现的性能非常接近最先进的sport-1m基准。这一结果既令人惊讶又令人沮丧，因为2D CNNs无法模拟时间信息和运动模式，而后者被认为是视频分析的关键方面。基于这些结果，我们可以假设时间推理对于精确的动作识别来说并不是必须的，因为在一个序列的静态帧中已经包含了强大的动作类信息；
+
+（3）我们证明，在同样深度的情况下，在具有挑战性的动作识别基准(如Sports- 1M和Kinetics)上进行训练和评估时，3D ResNets的表现明显优于2D ResNets；
+
+（4）提出两种时空卷积的新形式，可以看作是介于二维(空间卷积)和三维卷积之间的一种卷积形式：
+
+1）第一种形式被称为混合卷积(MC)，它只在网络的早期层使用3D卷积，而在顶层使用2D卷积，这种设计背后的基本原理是，运动建模是一种低/中级的操作，可以通过网络早期层的3D卷积来实现，对这些中级操作特性(通过顶层的2D卷积来实现)进行空间推理，从而实现精确的动作识别；这种方法的精度比2D卷积网络高3%-4%，并且与具有3倍多参数的3D卷积网络的性能相匹配；
+
+2）第二种形式是(2+1)D卷积块，将3D卷积分解为两个独立的、连续的操作：2D空间卷积和1D时间卷积；
 
 
 
+2.相关工作
+
+（1）在本研究中，包括了帧上的2D卷积、clips上的2D卷积、3D卷积、交错(混合)3D-2D卷积，以及将3D卷积分解为2D空间卷积和1D时间卷积的过程，即(2+1)D卷积；
+
+**注：帧上的2D卷积是逐帧（假设有L帧）进行卷积，得到L个feature map，k个卷积核就得到kL个feature map作为下一层的输入，在网络的最后层进行spatialtemporal pool融合时序信息；clips上的2D卷积相当于多通道卷积，把clips中的所有帧（假设有L帧）当成一个整体，共3L个通道（每帧有3通道），进行多通道的2D卷积。**
+
+（在3中会有介绍）
+
+
+
+3. Convolutional residual blocks for video
+
+在这项工作中，只考虑“普通的”残差块(即每个block由两个convolutional layer组成，每个layer之后都有ReLU激活函数；如下图所示：
+
+![ResNet3D_simple_block](/Users/momo/Documents/video/ResNet3D_simple_block.png)
+
+3.1. R2D: 2D convolutions over the entire clip
+
+（1）clips上的2D卷积忽视了时序，将L帧看成通道，把clips中的所有帧（假设有L帧）当成一个整体，共3L个通道（每帧有3通道），进行多通道的2D卷积；
+
+3.2. f-R2D: 2D convolutions over frames
+
+（1）帧上的2D卷积是逐帧（假设有L帧）进行卷积，得到L个feature map，k个卷积核就得到kL个feature map作为下一层的输入，在网络的最后层（top层）进行spatialtemporal pool融合时序信息；
+
+3.3. R3D: 3D convolutions
+
+（1）卷积核在时间上的尺寸设置为3，即一次卷3帧；
+
+3.4. MCx and rMCx: mixed 3D-2D convolutions
+
+在ResNet3D（simple block系列，每个block只有两层）的基础之上，将最后一层变为clip上的2D卷积得到的网络称为MC5，将最后两层变为clip上的2D卷积得到的网络称为MC4，依次类推，MC1实际上就是clip上的2D卷积对应的网络，如下图a)；MCx系列如下图b)；rMCx是将MCx的中间5个block逆过来，如下图c)。
+
+![r(2+1)d_variants](/Users/momo/Documents/video/r(2+1)d_variants.png)
+
+3.5. R(2+1)D: (2+1)D convolutions
+
+（1）将3D卷积核$N_{i-1}\times t\times d\times d$分解为2D的空间卷积$N_{i-1}\times 1\times d\times d$和1D的时间卷积$M_i\times t\times 1\times 1$；
+
+参数量如下：
+
+1）3D卷积核：$N_{i-1}\times t\times d\times d\times N_i$；
+
+2）(2+1)D卷积核：$N_{i-1}\times 1\times d\times d\times M_i+M_i\times t\times 1\times 1\times N_i$；
+
+（2）R(2+1)D的优点有两个，一是通过选择$M_i$（$M_i=\frac{N_{i-1}\times t\times d\times d\times N_i}{N_{i-1}\times 1\times d\times d+\times t\times 1\times 1\times N_i}$）的值，让R(2+1)d的参数量与3D卷积模块一样，这样在保证参数一样的同时还增加了非线性激活个次数，增加模型拟合能力；二是2D卷积和1D卷积相对于3D卷积来说比较好优化；
+
+
+
+4. Experiments
+
+（1）基础网络使用ResNet3D-18,34，如下图所示：
+
+![ResNet18_34](/Users/momo/Documents/video/ResNet18_34.png)
+
+（2）将帧Resize到$128*171$，再随机裁减到$112*112$，选取连续的$L$帧作为输入；epoch为1000，batch_size为32；初始学习率为0.01，然后指数衰减，每10个epoch学习率除以10；
 
 
 
@@ -424,8 +494,6 @@ C3D有一个非常重要的特征:它们直接创建时空数据的层次表示�
 ### S3D-G
 
 #### 论文：Rethinking Spatiotemporal Feature Learning: Speed-Accuracy Trade-offs in Video Classification
-
-与R(2+1)D基本一致
 
 
 
@@ -1548,6 +1616,130 @@ Two main findings:
 
 
 
+**#################################################################**
+
+### X3D
+
+#### 论文：X3D: Expanding Architectures for Efficient Video Recognition
+
+##### 一、论文理解
+
+1.简介
+
+（1）将2D图像分类网络框架拓展到3D视频分类时，通常将网络的输入、提取的feature和卷积核拓展到时间维度。其他的网络设置，如深度（网络层数）、宽度（通道数）以及空间尺寸基本是从2D网络继承而来。保持深度、宽度等设置不变，同时将模型拓展到时间维度，是可以提升模型的表现的，但是如果考虑到实际应用（准确率和计算量之间的平衡），这是往往得不到最优解，一般的2D轻量级网络也是这样；
+
+（2）将一个小的2D图像识别的网络框架扩展为一个3D的视频分类网络框架，可以调节一下参数：
+
+1）输入视频的持续时间：$\gamma_t$；
+
+2）帧率：$\gamma_T$；
+
+3）输入视频的空间分辨率：$\gamma_s$；
+
+4）网络宽度：$\gamma_w$；
+
+5）bottleneck宽度：$\gamma_b$；
+
+6）网络深度：$\gamma_d$；
+
+调节以上参数得到X3D模型（Expand 3D）
+
+（3）在不同的计算和精度范围内，X3D的性能达到了最先进水平，同时需要4.8×和5.5×更少的multiply-adds和参数，以达到与以前工作相同的精度；
+
+
+
+2.相关工作
+
+2.1.Spatiotemporal (3D) networks
+
+（1）多数直接直接将2D的图像分类网络拓展为3D的视频分类网络：I3D，C3D（包括ResNet3D）；
+
+（2）SlowFast框架在Slow和Fast pathway中探索了跨几个轴、不同时间、空间和通道分辨率的分辨率平衡；
+
+2.2.Efficient 2D networks
+
+（1）MobileNetV1,V2和ShuffleNetV1,V2主要用了channel-wise separable convolution（深度可分离卷积）、channel shuffle等网络设计方法；
+
+（2）MobileNetV3在MobileNetV2的基础上增加了SE(Squeeze-Excitation) attention block；
+
+（3）MnasNet中一系列通过神经网络框架自搜索的方法，得到一个网络框架，搜索空间中包括channel-wise separable模块，SE block以及MobileNetV3 Swish non-linearities等模块；
+
+（4）在MnasNet搜索方法的基础上，将线性比例因子（linear scaling factor）应用于空间、宽度和深度轴，以创建一系列用于图像分类的EfficientNet；
+
+**（5）EfficientNet采用了grid-search的方法，考虑$k$个维度，每个维度有$d$个值，共训练$d^k$个模型；MnasNet训练了8000左右个模型，对于视频来说，这些是不太现实的，因为最新版本的Kinetics数据集有195M帧图像，是ImageNet的162.5倍。X3D也是采用grid-search的方法，不同的是每次只拓展某个单一维度，一共6个维度，每个维度有5个step，共训练了30个模型。**
+
+
+
+2.3.Efficient 3D networks
+
+CSN(channel separated network)中将resnet拓展到3D，同时使用了MobileNetV1,V2中的channel-wise separated convolution技巧。
+
+
+
+3.X3D Networks
+
+（1）移动图像分类领域可以观察到类似的进展，其中收缩修改(较浅的网络，较低的分辨率，较薄的层，可分离的卷积)允许在较低的预算下运行。考虑到图像卷积网络设计的历史，视频架构没有类似的进展，因为视频领域的架构通常是基于图像模型的直接时间扩展；
+
+（2）视频架构的扩展涉及到一下几个问题：
+
+1）视频长时间输入和稀疏采样是否优于短时间输入稠密采样？
+
+2）是否需要更高的空间分辨率？以前的工作已经使用低分辨率的视频分类来提高效率，视频类型通常比互联网图像的空间分辨率更粗糙。因此，是否存在性能达到饱和的最大空间分辨率?
+
+3）是使用高帧率但较窄的通道的网络，还是使用较宽的模型来缓慢处理视频?
+
+4）当增加网络宽度时，是在ResNet块中全局扩展网络宽度更好，还是像在移动图像分类网络中使用channel-wise的可分卷积那样扩展内部(bottleneck)宽度更好?
+
+
+
+3.1中介绍基础baseline的X2D框架，3.2中使用3.3中的方法拓展X2D的时间维度，进而得到X3D。
+
+3.1.Basis instantiation
+
+（1）X2D作为baseline的网络架构，基本网络设计遵循ResNet结构和具有退化(单帧)时间输入的SlowFast网络的快速路径（Fast pathway）设计，下图展示了基础框架（参数$\gamma_T,\gamma_t,\gamma_s,\gamma_w,\gamma_b,\gamma_d$都设置为1）；
+
+![X2D](/Users/momo/Documents/video/X2D.png)
+
+（2）X2D基础网络的输入尺寸是$1\times112^2$，Conv1是MobileNet系列中的channel-wise操作；
+
+（3）X2D网络只有1.63M参数和20.67M的FLOPs；
+
+
+
+3.2. Expansion operations
+
+经过6个维度的分别拓展，出现6个类型的网络，$X-Fast,X-Temporal,X=Spatial,X-Depth,X-Width,X-Bottleneck$；
+
+
+
+3.3. Progressive Network Expansion
+
+Forward expansion：
+
+（1）$J(X)$代表当前的扩展因子$X$好的程度，对应模型的准确率，$C(X)$表示当前扩展因子的复杂度度量；
+
+（2）网络扩展是为了找到最好的平衡扩展因子$X,X=argmax_{Z,C(Z)=c}$；
+
+（3）文章中执行的扩展只改变a的一个膨胀因子，而保持其他因子不变，因此只有Z的不同子集需要计算，其中每一个都只在$X$的一个维度上改变。具有最佳计算/精度权衡的扩展因子保留到下一步。这是coordinate descent的一种形式在超参数空间由这些轴定义；
+
+
+
+4.Experiments: Action Classification
+
+扩展方法：每一步训练$a,a=6$个模型，每个模型扩展一个轴，共进行5步，共训练了30个模型，从中选择计算量和准确率平衡最好的模型即可。
+
+和ip-CSN-152相比在Kinetics-400上从头开始训练：
+
+ip-CSN-152：top-1准确率77.8%，GFLOPs：109，Param：32.8M
+
+X3D-XXL：top-1准确率80.4%，GFLOPs：194，Param：20.3M
+
+
+
+**总结：这篇文章参考了2D轻量级网络EfficientNet的思路，对网络中的各个参数进行扩展搜索，得到最合适的参数。**
+
+##### 二、代码复现（https: //github.com/facebookresearch/SlowFast）
+
 
 
 
@@ -1598,9 +1790,14 @@ I3D实际上是利用了ImageNet上预训练的2D卷积网络的预训练结果�
 
 #### 六、R(2+1)D
 
+将3D卷积核$N_{i-1}\times t\times d\times d$分解为2D的空间卷积$N_{i-1}\times 1\times d\times d$和1D的时间卷积$M_i\times t\times 1\times 1$；本质上还是两个3D卷积，只不过分别在时间维度和空间维度将值设置为1，并称之为空间卷积和时间卷积。
+
+
+
 #### 七、CSN
 
 将3DResNet中bottleneck中的$3*3*3$convolution替换成$1*1*1$的conventional convolution以及$3*3*3$的depthwise convolution。
 
 ![Channel-Separated Bottleneck Block](/Users/momo/Documents/video/Channel-Separated Bottleneck Block.png)
 
+$1*1*1$的卷积实际上就是传统的3D卷积，$3*3*3$的depthwise convolution在卷积时会不一样。假设输入通道是$C_{in}$，分为$G$组，每组$\frac{C_{in}}{G}$个通道，输出通道是$C_{out}$，传统的卷积过程在规定了输出通道为$C_{out}$之后，就确定了有$C_{out}$个卷积核，但是depthwise convolution确定了有$\frac{C_{out}}{G}$个卷积核，每个卷积核都要和输入通道$G$组中的每一组进行卷积得到一个feature map，$G$组就得到$G$个feature map，共有$\frac{C_{out}}{G}$个卷积核，所以最终的输出通道还是$C_{out}$个。
