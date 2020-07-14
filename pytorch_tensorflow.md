@@ -8,7 +8,7 @@
 
 1.张量，Tensor
 
-Pytorch里面最基本的操作对象就是Tensor(张量)，表示的其实就是一个多维矩阵，并有矩阵相关的运算操作。在操作上和numpy是对应的，但是和numpy唯一不同的就是，pytorch可以在GPU上运行加速，而numpy不可以，当然二者也可以相互转换。Tensor只需要调用cuda()函数就可以将其转化为能在GPU上运行的类型。
+Pytorch里面最基本的操作对象就是Tensor(张量)，表示的其实就是一个多维矩阵，并有矩阵相关的运算操作。在操作上和numpy是对应的，但是和numpy唯一不同的就是，Tensor可以在GPU上运行加速，而numpy不可以，当然二者也可以相互转换。Tensor只需要调用cuda()函数就可以将其转化为能在GPU上运行的类型。
 
 （1）定义：
 
@@ -106,7 +106,7 @@ class Activation_Net(nn.Module):
       
 class Batch_Net(nn.Module):
     '''
-    在上面的Activation_Net的基础上，增加一个加快收敛速度的方法--标准化
+    在上面的Activation_Net的基础上，增加一个加快收敛速度的方法--归一化
     '''
     def __init__(self, in_dim, n_hidden_1, n_hidden_2, out_dim):
         super(Batch_Net, self).__init__()
@@ -120,6 +120,8 @@ class Batch_Net(nn.Module):
         x = self.layer3(x)
         return x
 ```
+
+**注：nn.ReLU() 和 nn.ReLU(inplace=True)对计算结果不会有影响。利用inplace计算可以节省内（显）存，同时还可以省去反复申请和释放内存的时间。但是会对原变量覆盖，只要不带来错误就用。**
 
 
 
@@ -167,7 +169,7 @@ torch 中的Tensor操作x.view相当于numpy中的array的reshape操作，其中
 
 
 
-(6)模型代码：
+(4)卷积神经网络模型代码：
 
 ```python
 from torch import nn
@@ -178,7 +180,7 @@ class CNN(nn.Module):
         self.layer1 = nn.Sequential(
             nn.Conv2d(1, 25, kernel_size=3),
             nn.BatchNorm2d(25),
-            nn.ReLu(inplace=True))
+            nn.ReLU(inplace=True))
         self.layer2 = nn.Sequential(
             nn.MaxPool2d(kernel_size=2, stride=2))
         self.layer3 = nn.Sequential(
@@ -206,9 +208,9 @@ def forward(self, x):
 
 
 
-3.resnet模块
+3.ResNet网络
 
-resnet中有两个基本的block，一个是$3*3$+$3*3$，称为basic block；另一个是$1*1$+$3*3$+$1*1$，称为bottleneck。这里先写两个残差结构block，然后再搭建整个网络：
+ResNet中有两个基本的block，一个是$3*3$+$3*3$，称为basic block；另一个是$1*1$+$3*3$+$1*1$，称为bottleneck block。这里先写两个残差结构block，然后再搭建整个网络：
 
 ```python
 import torch
@@ -227,7 +229,7 @@ class BasicBlock(nn.Module):
                               stride=1, padding=1, bias=False)
         self.bn2 = nn.BatchNorm2d(planes)
         self.shortcut = nn.Sequential()
-        # 经过非shortcut分支处理之后，输入信号x的通道数会发生变化，所以需要在s hortcut分支对通道数做处理，变换为统一维度才可以相加
+        # 经过非shortcut分支处理之后，输入信号x的通道数会发生变化，所以需要在shortcut分支对通道数做处理，变换为统一维度才可以相加	
         if stride != 1 or in_planes != self.expansion*planes:
             self.shortcut = nn.Sequentisl(
                 nn.Conv2d(in_planes, self.expansion*planes,
@@ -325,11 +327,33 @@ def ResNet152():
 
 
 
-4.resnet-3D
+4.MobileNetV2
 
 
 
-5.ip-CSN
+
+
+5.GhostNet
+
+
+
+
+
+6.ResNet-3D
+
+
+
+7.R(2+1)D
+
+
+
+8.ip-CSN
+
+
+
+9.GhostNet-3D
+
+
 
 
 
