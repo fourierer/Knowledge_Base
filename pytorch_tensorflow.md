@@ -210,7 +210,7 @@ def forward(self, x):
 
 3.ResNet网络
 
-ResNet中有两个基本的block，一个是$3*3$+$3*3$，称为basic block；另一个是$1*1$+$3*3$+$1*1$，称为bottleneck block。这里先写两个残差结构block，然后再搭建整个网络：
+ResNet中有两个基本的block，一个是$3\times3$+$3\times3$，称为basic block；另一个是$1\times1$+$3\times3$+$1\times1$，称为bottleneck block。这里先写两个残差结构block，然后再搭建整个网络：
 
 ```python
 import torch
