@@ -210,7 +210,14 @@ def forward(self, x):
 
 3.ResNet网络
 
-ResNet中有两个基本的block，一个是$3\times3$+$3\times3$，称为basic block；另一个是$1\times1$+$3\times3$+$1\times1$，称为bottleneck block。这里先写两个残差结构block，然后再搭建整个网络：
+ResNet中有两个基本的block，一个是$3*3$+$3*3$，称为basic block；另一个是$1*1$+$3*3$+$1*1$，称为bottleneck block。这里先写两个残差结构block，然后再搭建整个网络：
+
+先给出卷积输入和输出尺寸大小公式：假设输入信号尺寸为$w*h$，卷积核大小为$f*f$，填充大小为$p$，步长为$s$，则输出尺寸$w'*h'$为：
+$$
+w'=\frac{w-f+2p}{s}+1\\
+h'=\frac{h-f+2p}{s}+1
+$$
+
 
 ```python
 import torch
@@ -251,7 +258,7 @@ class Bottleneck(nn.Module):
         super(Bottleneck, self).__init__()
         self.conv1 = nn.Conv2d(in_planes, planes, kernel_size=1, bias=False)
         self.bn1 = nn.BatchNorm2d(planes)
-        self.conv2d = nn.Conv2d(planes, planes, kernel_size=3,
+        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3,
                                 stride=stride, padding=1, bias=False)
         self.bn2 = nn.BatchNorm2d(planes)
         self.conv3 = nn.Conv2d(planes, self.expansion*planes, 
@@ -259,7 +266,7 @@ class Bottleneck(nn.Module):
         self.bn3 = nn.BatchNorm2d(self.expansion*planes)
         
         self.shortcut = nn.Sequential()
-        if stride != 1 or in_planes != self.expanson*planes:
+        if stride != 1 or in_planes != self.expansion*planes:
             self.shortcut = nn.Sequential(
                 nn.Conv2d(in_planes, self.expansion*planes, 
                           kernel_size=1, stride=stride, bias=False),
@@ -284,9 +291,9 @@ class ResNet(nn.Module):
         self.bn1 = nn.BatchNorm2d(64)
         
         self.layer1 = self._make_layer(block, 64, num_blocks[0], stride=1)
-        self.layer2 = self._make_layer(block, 128, numblock[1], stride=2)
-        self.layer3 = self._make_layer(block, 256, num_block[2], stride=2)
-        self.layer4 = self._make_layer(block, 512, num_block[3], stride=2)
+        self.layer2 = self._make_layer(block, 128, num_blocks[1], stride=2)
+        self.layer3 = self._make_layer(block, 256, num_blocks[2], stride=2)
+        self.layer4 = self._make_layer(block, 512, num_blocks[3], stride=2)
         # 最后一层为全连接层
         self.linear = nn.Linear(512*block.expansion, num_classes)
         
