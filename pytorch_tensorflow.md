@@ -451,6 +451,72 @@ print('final acc in Test data:' + str(eval_acc / len(test_data)))
 
 
 
+#### 3.加载模型进行预训练
+
+（1）模型加载
+
+一般模型会保存为.pth文件或者保存为tar包（一般tar包是一个字典，保存了模型参数以及训练的一些信息，如训练epoch数，学习率等），加载方法分别是：
+
+```python
+model = ghost_net()
+model.load_state_dict(torch.load('./xxx.pth'))
+```
+
+```python
+model = ghost_net()
+checkpoint = torch.load('./xxx.pth.tar')
+model.load_state_dict(checkpoint['state_dict'])
+```
+
+
+
+（2）加载预训练模型
+
+现在模型训练基本上都会采用预训练的方式，在一个大的数据集上训好了模型参数，再加载到一个小的数据集上继续训练。在不同的任务中模型结构会不一样，比如分类数量发生改变。这里以分类问题为例，介绍加载模型进行预训练的方法，一般来说有三种写法：
+
+**注：一般来说，训好的模型和当前模型结构上相差不大，只是在最后的分类层改变了分类数。这里需要注意的是，预训练的网络框架和当前模型训练的网络框架不能用同一份代结构码，需要做一点修改。**
+
+**首先用代码GhostNet.py在ImageNet上训好了一个1000类的分类模型，此时最后一层的名称为self.classifer，则在保存的预训练模型字典当中，会存在一个键为self.classider，对应的值是这一层的参数。如果再接着用GhostNet.py这个脚本，则最后一层的名称还是self.classifer，但是由于任务不同，此时一般会更改这一层的分类数。这就导致模型加载的时候，最后一层的名称相同，但参数尺寸却不一样，这是无法对应加载参数的。解决方法是更改最后一层的名称，比如改为self.classifer1。在加载模型参数的时候，只加载名称相同的层对应的参数，最后一层名称对应不上，则会舍弃这一层的参数，改为随机初始化，达到预训练的目的。**
+
+1）手动替换掉不同的字典键（预训练模型在本地）
+
+```python
+model = ghost_net()
+model_dict = model.state_dict # 获取当前模型参数字典，包括模型的各层的名称（键）和相应的参数（值）
+pretrained_dict = torch.load('./pretrain.pth') # 加载预训练的模型，此时pretrained_dict也是一个字典，包括各层的名称和相应的参数
+pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict} # 在pretrained_dict中保存与model_dict中键名称相同的那些键，舍弃不同的键，这里是网络结构代码要更改名称的原因
+model_dict.update(pretrained_dict) # 用pretrained_dict的参数值去覆盖model_dict
+model.load_state_dict(model_dict) # 加载覆盖之后的模型参数
+```
+
+
+
+2）手动替换替换掉不同的字典键（给定预训练模型url）
+
+```python
+import torch.utils.model_zoo as model_zoo
+
+model = ghost_net()
+model_dict = model.state_dict
+pretrained_dict = model_zoo.load_url('http://github.com/d-li14/ghostnet/pretrain/pretrain.pth')
+pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict}
+model_dict.update(pretrained_dict)
+model.load_state_dict(model_dict)
+```
+
+这个方法我没有运行成功，但网上很多教程都是这样写的。
+
+
+
+3）使用pytorch自带函数自动替换
+
+```python
+model = ghost_net()
+#checkpoint = torch.load('./model_best.pth.tar')
+#model.load_state_dict(checkpoint['state_dict'], strict=False)
+model.load_state_dict(torch.load('./pretrain.pth'), strict=False)
+```
+
 
 
 ### Tensorflow
