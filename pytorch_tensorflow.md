@@ -451,7 +451,7 @@ print('final acc in Test data:' + str(eval_acc / len(test_data)))
 
 
 
-#### 3.加载模型进行预训练
+#### 三、加载模型进行预训练
 
 （1）模型加载
 
