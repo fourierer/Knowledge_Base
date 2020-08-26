@@ -519,6 +519,28 @@ model.load_state_dict(torch.load('./pretrain.pth'), strict=False)
 
 
 
+#### 四、在pytorch官网上下载在ImageNet训好的pytorch模型
+
+网站 https://pytorch.org/docs/stable/model_zoo.html#module-torch.utils.model_zoo 介绍了使用函数torch.hub.load_state_dict_from_url下载预训练好的模型：
+
+```python
+import torch
+state_dict = torch.hub.load_state_dict_from_url('https://s3.amazonaws.com/pytorch/models/resnet18-5c106cde.pth')
+```
+
+实际上使用时最好指定下载的路径，否则不太好找默认下载的文件路径，一般默认下载服务器当前用户根目录缓存文件夹中，如：/home/sunzheng/.cache/torch/checkpoints/
+
+指定下载路径：
+
+```python
+import torch
+state_dict = torch.hub.load_state_dict_from_url('https://s3.amazonaws.com/pytorch/models/resnet18-5c106cde.pth','/home/sunzheng/Keypoint_Detection/human-pose-estimation.pytorch/models/imagenet')
+```
+
+**注意：torch.hub最低版本要求是torch1.1，低版本的torch使用不了这个函数。**
+
+
+
 ### Tensorflow
 
 
