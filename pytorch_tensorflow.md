@@ -55,6 +55,37 @@ if torch.cuda.is_available():
   inputs = tmp.cuda() # Tensor转换为GPU上的数据类型
 ```
 
+（2）张量的拆分：torch.split()和torch.chunk()
+
+1)torch.split(size,dim=0)
+
+```python
+>>> x = torch.randn(3, 10, 6)
+>>> a, b, c = x.split(1, 0) # 在0维进行间隔为1的拆分
+>>> a.size(), b.size(), c.size()
+(torch.Size([1, 10, 6]), torch.Size([1, 10, 6]), torch.Size([1, 10, 6]))
+>>> d, e = x.split(2, 0) # 在0维进行间隔为2的拆分
+>>> d.size(), e.size()
+(torch.Size([2, 10, 6]), torch.Size([1, 10, 6]))
+```
+
+在维度0方向上，每隔size进行拆分，剩下的不足size就作为最后一个；
+
+2)torch.chunk(size,dim=0)
+
+```python
+>>> l, m, n = x.chunk(3, 0) # 在0维上拆分成3份
+>>> l.size(), m.size(), n.size()
+(torch.Size([1, 10, 6]), torch.Size([1, 10, 6]), torch.Size([1, 10, 6]))
+>>> u, v = x.chunk(2, 0) # 在0维上拆分成2份
+>>> u.size(), v.size()
+(torch.Size([2, 10, 6]), torch.Size([1, 10, 6]))
+```
+
+把张量在0维度上拆分成3部分时，因为尺寸正好为3，所以每个分块的间隔相等，都为 1。
+
+把张量在0维度上拆分成2部分时，无法平均分配，以上面的结果来看，可以看成是，用0维度的尺寸除以需要拆分的份数，把余数作为最后一个分块的间隔大小，再把前面的分块以相同的间隔拆分。
+
 
 
 2.变量，Variable
