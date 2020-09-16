@@ -249,118 +249,666 @@ w'=\frac{w-f+2p}{s}+1\\
 h'=\frac{h-f+2p}{s}+1
 $$
 
+给出pytorch中给的ResNet源码：
+
 
 ```python
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+#from .utils import load_state_dict_from_url
+from torchsummaryX import summary
 
-#用于ResNet-18和34的残差块，用的是3*3+3*3的卷积
+__all__ = ['ResNet', 'resnet18', 'resnet34', 'resnet50', 'resnet101',
+           'resnet152', 'resnext50_32x4d', 'resnext101_32x8d']
+
+
+model_urls = {
+    'resnet18': 'https://download.pytorch.org/models/resnet18-5c106cde.pth',
+    'resnet34': 'https://download.pytorch.org/models/resnet34-333f7ec4.pth',
+    'resnet50': 'https://download.pytorch.org/models/resnet50-19c8e357.pth',
+    'resnet101': 'https://download.pytorch.org/models/resnet101-5d3b4d8f.pth',
+    'resnet152': 'https://download.pytorch.org/models/resnet152-b121ed2d.pth',
+    'resnext50_32x4d': 'https://download.pytorch.org/models/resnext50_32x4d-7cdf4587.pth',
+    'resnext101_32x8d': 'https://download.pytorch.org/models/resnext101_32x8d-8ba56ff5.pth',
+}
+
+#卷积尺寸变化公式：w' = (w-f+2p)/s + 1
+
+def conv3x3(in_planes, out_planes, stride=1, groups=1, dilation=1):
+    """3x3 convolution with padding"""
+    return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
+                     padding=dilation, groups=groups, bias=False, dilation=dilation)
+#s=1, p=1, f=3, w' = (w-3+2)/1 + 1 = w，该卷积不改变feature map空间尺寸，只改变通道数
+
+def conv1x1(in_planes, out_planes, stride=1):
+    """1x1 convolution"""
+    return nn.Conv2d(in_planes, out_planes, kernel_size=1, stride=stride, bias=False)
+#s=1, p=0, f=1, w' = (w-1+0)/1 + 1 = w，该卷积同样不改变feature map空间尺寸，只改变通道数
+
 class BasicBlock(nn.Module):
-    expansion = 1
-    def __init__(self, in_planes, planes, stride=1):
+    expansion = 1 # 中间没有隐藏层，expansion是1，默认通道数不变
+
+    def __init__(self, inplanes, planes, stride=1, downsample=None, groups=1,
+                 base_width=64, dilation=1, norm_layer=None):
         super(BasicBlock, self).__init__()
-        self.conv1 = nn.Conv2d(in_planes, planes, kernel_size=3,
-                               stride=stride, padding=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(planes)
-        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3,
-                              stride=1, padding=1, bias=False)
-        self.bn2 = nn.BatchNorm2d(planes)
-        self.shortcut = nn.Sequential()
-        # 经过非shortcut分支处理之后，输入信号x的通道数会发生变化，所以需要在shortcut分支对通道数做处理，变换为统一维度才可以相加	
-        if stride != 1 or in_planes != self.expansion*planes:
-            self.shortcut = nn.Sequentisl(
-                nn.Conv2d(in_planes, self.expansion*planes,
-                           kernel_size=1, stride=stride, bias=False),
-                nn.BatchNorm2d(self.expansion*planes))
+        if norm_layer is None:
+            norm_layer = nn.BatchNorm2d
+        if groups != 1 or base_width != 64:
+            raise ValueError('BasicBlock only supports groups=1 and base_width=64')
+        if dilation > 1:
+            raise NotImplementedError("Dilation > 1 not supported in BasicBlock")
+        # Both self.conv1 and self.downsample layers downsample the input when stride != 1
+        self.conv1 = conv3x3(inplanes, planes, stride)
+        self.bn1 = norm_layer(planes)
+        self.relu = nn.ReLU(inplace=True)
+        self.conv2 = conv3x3(planes, planes)
+        self.bn2 = norm_layer(planes)
+        self.downsample = downsample
+        self.stride = stride
+
     def forward(self, x):
-        out = F.relu(self.bn1(self.conv1(x)))
-        out = self.bn2(self.conv2(out))
-        out += self.shortcut(x)
-        out = F.relu(out)
+        identity = x
+
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.relu(out)
+
+        out = self.conv2(out)
+        out = self.bn2(out)
+
+        if self.downsample is not None:
+            identity = self.downsample(x)
+
+        out += identity # shortcut
+        out = self.relu(out)
+
         return out
-   
-# 用于ResNet-50，101，152的残差块，用的是1*1+3*3+1*1的卷积
+
+
 class Bottleneck(nn.Module):
-    # 前面1*1和3*3卷积的fliter个数相等，最后1*1卷积是其的expansion倍
     expansion = 4
-    
-    def __init__(self, in_planes, planes, stride=1):
+
+    def __init__(self, inplanes, planes, stride=1, downsample=None, groups=1,
+                 base_width=64, dilation=1, norm_layer=None):
         super(Bottleneck, self).__init__()
-        self.conv1 = nn.Conv2d(in_planes, planes, kernel_size=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(planes)
-        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3,
-                                stride=stride, padding=1, bias=False)
-        self.bn2 = nn.BatchNorm2d(planes)
-        self.conv3 = nn.Conv2d(planes, self.expansion*planes, 
-                               kernel_size=1, bias=False)
-        self.bn3 = nn.BatchNorm2d(self.expansion*planes)
-        
-        self.shortcut = nn.Sequential()
-        if stride != 1 or in_planes != self.expansion*planes:
-            self.shortcut = nn.Sequential(
-                nn.Conv2d(in_planes, self.expansion*planes, 
-                          kernel_size=1, stride=stride, bias=False),
-                nn.BatchNorm2d(self.expansion*planes))
-            
+        if norm_layer is None:
+            norm_layer = nn.BatchNorm2d
+        width = int(planes * (base_width / 64.)) * groups
+        # Both self.conv2 and self.downsample layers downsample the input when stride != 1
+        self.conv1 = conv1x1(inplanes, width)
+        self.bn1 = norm_layer(width)
+        self.conv2 = conv3x3(width, width, stride, groups, dilation)
+        self.bn2 = norm_layer(width)
+        self.conv3 = conv1x1(width, planes * self.expansion)
+        self.bn3 = norm_layer(planes * self.expansion)
+        self.relu = nn.ReLU(inplace=True)
+        self.downsample = downsample
+        self.stride = stride
+
     def forward(self, x):
-        out = F.relu(self.bn1(self.conv1(x)))
-        out = F.relu(self.bn2(self.conv2(out)))
-        out = self.bn3(self.conv3(out))
-        out +=self.shortcut(x)
-        out = F.relu(out)
+        identity = x
+
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.relu(out)
+
+        out = self.conv2(out)
+        out = self.bn2(out)
+        out = self.relu(out)
+
+        out = self.conv3(out)
+        out = self.bn3(out)
+
+        if self.downsample is not None:
+            identity = self.downsample(x)
+
+        out += identity
+        out = self.relu(out)
+
         return out
-      
-# 搭建ResNet网络
+
+
 class ResNet(nn.Module):
-    def __init__(self, block, num_blocks, num_classes=10):
+
+    def __init__(self, block, layers, num_classes=1000, zero_init_residual=False,
+                 groups=1, width_per_group=64, replace_stride_with_dilation=None,
+                 norm_layer=None):
         super(ResNet, self).__init__()
-        self.in_planes = 64
-        # 输入之后第一个卷积层
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=3,
-                               stride=1, padding=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(64)
-        
-        self.layer1 = self._make_layer(block, 64, num_blocks[0], stride=1)
-        self.layer2 = self._make_layer(block, 128, num_blocks[1], stride=2)
-        self.layer3 = self._make_layer(block, 256, num_blocks[2], stride=2)
-        self.layer4 = self._make_layer(block, 512, num_blocks[3], stride=2)
-        # 最后一层为全连接层
-        self.linear = nn.Linear(512*block.expansion, num_classes)
-        
-    def _make_layer(self, block, planes, num_blocks, stride):
-        strides = [stride] + [1]*(num_blocks-1)
+        if norm_layer is None:
+            norm_layer = nn.BatchNorm2d
+        self._norm_layer = norm_layer
+
+        self.inplanes = 64
+        self.dilation = 1
+        if replace_stride_with_dilation is None:
+            # each element in the tuple indicates if we should replace
+            # the 2x2 stride with a dilated convolution instead
+            replace_stride_with_dilation = [False, False, False]
+        if len(replace_stride_with_dilation) != 3:
+            raise ValueError("replace_stride_with_dilation should be None "
+                             "or a 3-element tuple, got {}".format(replace_stride_with_dilation))
+        self.groups = groups
+        self.base_width = width_per_group
+        self.conv1 = nn.Conv2d(3, self.inplanes, kernel_size=7, stride=2, padding=3,
+                               bias=False)
+        self.bn1 = norm_layer(self.inplanes)
+        self.relu = nn.ReLU(inplace=True)
+        self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+        self.layer1 = self._make_layer(block, 64, layers[0])
+        self.layer2 = self._make_layer(block, 128, layers[1], stride=2,
+                                       dilate=replace_stride_with_dilation[0])
+        self.layer3 = self._make_layer(block, 256, layers[2], stride=2,
+                                       dilate=replace_stride_with_dilation[1])
+        self.layer4 = self._make_layer(block, 512, layers[3], stride=2,
+                                       dilate=replace_stride_with_dilation[2])
+        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
+        # [1, 2048, 7, 7]->[1, 2048, 1, 1]
+        self.fc = nn.Linear(512 * block.expansion, num_classes)
+
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+            elif isinstance(m, (nn.BatchNorm2d, nn.GroupNorm)):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+
+        # Zero-initialize the last BN in each residual branch,
+        # so that the residual branch starts with zeros, and each residual block behaves like an identity.
+        # This improves the model by 0.2~0.3% according to https://arxiv.org/abs/1706.02677
+        if zero_init_residual:
+            for m in self.modules():
+                if isinstance(m, Bottleneck):
+                    nn.init.constant_(m.bn3.weight, 0)
+                elif isinstance(m, BasicBlock):
+                    nn.init.constant_(m.bn2.weight, 0)
+
+    def _make_layer(self, block, planes, blocks, stride=1, dilate=False):
+        norm_layer = self._norm_layer
+        downsample = None
+        previous_dilation = self.dilation
+        if dilate:
+            self.dilation *= stride
+            stride = 1
+        if stride != 1 or self.inplanes != planes * block.expansion:
+            downsample = nn.Sequential(
+                conv1x1(self.inplanes, planes * block.expansion, stride),
+                norm_layer(planes * block.expansion),
+            )
+
         layers = []
-        for stride in strides:
-            layers.append(block(self.in_planes, planes, stride))
-            self.in_planes = planes * block.expansion
+        # 第一阶段self.inplanes=64，128 ！= 64*4，所以第一个block是带shortcut的bottleneck，
+        # 随后self.inplanes变为64*4=256，以256->64->256的通道数构建bottleneck；
+        # 第二阶段self.inplanes=256，256 ！= 128*4，所以第一个block是带shortcut的bottleneck，
+        # 随后self.inplanes变为128*4=512，以512->128->512的通道数构建bottleneck；
+        # 第三、四阶段以此类推...
+
+        # 四个阶段第一个block都是带shortcut的bottleneck，不带shortcut的bottleneck的planes分别是64,128,256,512.
+        layers.append(block(self.inplanes, planes, stride, downsample, self.groups,
+                            self.base_width, previous_dilation, norm_layer))
+        self.inplanes = planes * block.expansion
+        # 再增加n-1个不带shortcut的正常bottleneck，通道数4m->m->4m，m分别是64,128,256,512
+        for _ in range(1, blocks):
+            layers.append(block(self.inplanes, planes, groups=self.groups,
+                                base_width=self.base_width, dilation=self.dilation,
+                                norm_layer=norm_layer))
+
         return nn.Sequential(*layers)
-  
-    def forward(self,x):
-      out = F.relu(self.bn1(self.conv1(x)))
-      out = self.layer1(out)
-      out = self.layer2(out)
-      out = self.layer3(out)
-      out = self.layer4(out)
-      out = F.avg_pool2d(out, 4)
-      out = out.view(out.size[0], -1)
-      out = self.linear(out)
-      return out
-        
-def ResNet18():
-    return ResNet(BasicBlock, [2, 2, 2, 2])
-  
-def ResNet34():
-    return Resnet(BasicBlock, [3, 4, 6, 3])
 
-def ResNet50():
-    return ResNet(Bottleneck, [3, 4, 6, 3])
+    def forward(self, x):
+        x = self.conv1(x)
+        x = self.bn1(x)
+        x = self.relu(x)
+        x = self.maxpool(x)
 
-def ResNet101():
-    return ResNet(Bottleneck, [3, 4, 23, 3])
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
+        x = self.layer4(x)
 
-def ResNet152():
-    return ResNet(Bottleneck, [3, 8, 36, 3])
+        x = self.avgpool(x)
+        x = x.reshape(x.size(0), -1)
+        x = self.fc(x)
+
+        return x
+
+
+def _resnet(arch, block, layers, pretrained, progress, **kwargs):
+    model = ResNet(block, layers, **kwargs)
+    #if pretrained:
+        #state_dict = load_state_dict_from_url(model_urls[arch], progress=progress)
+        #model.load_state_dict(state_dict)
+    return model
+
+
+def resnet18(pretrained=False, progress=True, **kwargs):
+    """Constructs a ResNet-18 model.
+
+    Args:
+        pretrained (bool): If True, returns a model pre-trained on ImageNet
+        progress (bool): If True, displays a progress bar of the download to stderr
+    """
+    return _resnet('resnet18', BasicBlock, [2, 2, 2, 2], pretrained, progress,
+                   **kwargs)
+
+
+def resnet34(pretrained=False, progress=True, **kwargs):
+    """Constructs a ResNet-34 model.
+
+    Args:
+        pretrained (bool): If True, returns a model pre-trained on ImageNet
+        progress (bool): If True, displays a progress bar of the download to stderr
+    """
+    return _resnet('resnet34', BasicBlock, [3, 4, 6, 3], pretrained, progress,
+                   **kwargs)
+
+
+def resnet50(pretrained=False, progress=True, **kwargs):
+    """Constructs a ResNet-50 model.
+
+    Args:
+        pretrained (bool): If True, returns a model pre-trained on ImageNet
+        progress (bool): If True, displays a progress bar of the download to stderr
+    """
+    return _resnet('resnet50', Bottleneck, [3, 4, 6, 3], pretrained, progress,
+                   **kwargs)
+
+
+def resnet101(pretrained=False, progress=True, **kwargs):
+    """Constructs a ResNet-101 model.
+
+    Args:
+        pretrained (bool): If True, returns a model pre-trained on ImageNet
+        progress (bool): If True, displays a progress bar of the download to stderr
+    """
+    return _resnet('resnet101', Bottleneck, [3, 4, 23, 3], pretrained, progress,
+                   **kwargs)
+
+
+def resnet152(pretrained=False, progress=True, **kwargs):
+    """Constructs a ResNet-152 model.
+
+    Args:
+        pretrained (bool): If True, returns a model pre-trained on ImageNet
+        progress (bool): If True, displays a progress bar of the download to stderr
+    """
+    return _resnet('resnet152', Bottleneck, [3, 8, 36, 3], pretrained, progress,
+                   **kwargs)
+
+
+def resnext50_32x4d(pretrained=False, progress=True, **kwargs):
+    """Constructs a ResNeXt-50 32x4d model.
+
+    Args:
+        pretrained (bool): If True, returns a model pre-trained on ImageNet
+        progress (bool): If True, displays a progress bar of the download to stderr
+    """
+    kwargs['groups'] = 32
+    kwargs['width_per_group'] = 4
+    return _resnet('resnext50_32x4d', Bottleneck, [3, 4, 6, 3],
+                   pretrained, progress, **kwargs)
+
+
+def resnext101_32x8d(pretrained=False, progress=True, **kwargs):
+    """Constructs a ResNeXt-101 32x8d model.
+
+    Args:
+        pretrained (bool): If True, returns a model pre-trained on ImageNet
+        progress (bool): If True, displays a progress bar of the download to stderr
+    """
+    kwargs['groups'] = 32
+    kwargs['width_per_group'] = 8
+    return _resnet('resnext101_32x8d', Bottleneck, [3, 4, 23, 3],
+                   pretrained, progress, **kwargs)
+
+
+if __name__=='__main__':
+    model = resnet50()
+    print(model)
+    summary(model, torch.zeros(1, 3, 224, 224))
+
+```
+
+输出结果为：
+
+```
+ResNet(
+  (conv1): Conv2d(3, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)
+  (bn1): BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+  (relu): ReLU(inplace)
+  (maxpool): MaxPool2d(kernel_size=3, stride=2, padding=1, dilation=1, ceil_mode=False)
+  (layer1): Sequential(
+    (0): Bottleneck(
+      (conv1): Conv2d(64, 64, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn1): BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv2): Conv2d(64, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+      (bn2): BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv3): Conv2d(64, 256, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn3): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (relu): ReLU(inplace)
+      (downsample): Sequential(
+        (0): Conv2d(64, 256, kernel_size=(1, 1), stride=(1, 1), bias=False)
+        (1): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      )
+    )
+    (1): Bottleneck(
+      (conv1): Conv2d(256, 64, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn1): BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv2): Conv2d(64, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+      (bn2): BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv3): Conv2d(64, 256, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn3): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (relu): ReLU(inplace)
+    )
+    (2): Bottleneck(
+      (conv1): Conv2d(256, 64, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn1): BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv2): Conv2d(64, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+      (bn2): BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv3): Conv2d(64, 256, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn3): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (relu): ReLU(inplace)
+    )
+  )
+(layer2): Sequential(
+    (0): Bottleneck(
+      (conv1): Conv2d(256, 128, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn1): BatchNorm2d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv2): Conv2d(128, 128, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), bias=False)
+      (bn2): BatchNorm2d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv3): Conv2d(128, 512, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn3): BatchNorm2d(512, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (relu): ReLU(inplace)
+      (downsample): Sequential(
+        (0): Conv2d(256, 512, kernel_size=(1, 1), stride=(2, 2), bias=False)
+        (1): BatchNorm2d(512, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      )
+    )
+    (1): Bottleneck(
+      (conv1): Conv2d(512, 128, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn1): BatchNorm2d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv2): Conv2d(128, 128, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+      (bn2): BatchNorm2d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv3): Conv2d(128, 512, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn3): BatchNorm2d(512, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (relu): ReLU(inplace)
+    )
+    (2): Bottleneck(
+      (conv1): Conv2d(512, 128, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn1): BatchNorm2d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv2): Conv2d(128, 128, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+      (bn2): BatchNorm2d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv3): Conv2d(128, 512, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn3): BatchNorm2d(512, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (relu): ReLU(inplace)
+    )
+    (3): Bottleneck(
+      (conv1): Conv2d(512, 128, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn1): BatchNorm2d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv2): Conv2d(128, 128, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+      (bn2): BatchNorm2d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv3): Conv2d(128, 512, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn3): BatchNorm2d(512, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (relu): ReLU(inplace)
+    )
+  )
+ (layer3): Sequential(
+    (0): Bottleneck(
+      (conv1): Conv2d(512, 256, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn1): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv2): Conv2d(256, 256, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), bias=False)
+      (bn2): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv3): Conv2d(256, 1024, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn3): BatchNorm2d(1024, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (relu): ReLU(inplace)
+      (downsample): Sequential(
+        (0): Conv2d(512, 1024, kernel_size=(1, 1), stride=(2, 2), bias=False)
+        (1): BatchNorm2d(1024, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      )
+    )
+    (1): Bottleneck(
+      (conv1): Conv2d(1024, 256, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn1): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv2): Conv2d(256, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+      (bn2): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv3): Conv2d(256, 1024, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn3): BatchNorm2d(1024, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (relu): ReLU(inplace)
+    )
+    (2): Bottleneck(
+      (conv1): Conv2d(1024, 256, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn1): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv2): Conv2d(256, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+      (bn2): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv3): Conv2d(256, 1024, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn3): BatchNorm2d(1024, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (relu): ReLU(inplace)
+    )
+    (3): Bottleneck(
+      (conv1): Conv2d(1024, 256, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn1): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv2): Conv2d(256, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+      (bn2): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv3): Conv2d(256, 1024, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn3): BatchNorm2d(1024, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (relu): ReLU(inplace)
+    )
+    (4): Bottleneck(
+      (conv1): Conv2d(1024, 256, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn1): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv2): Conv2d(256, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+      (bn2): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv3): Conv2d(256, 1024, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn3): BatchNorm2d(1024, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (relu): ReLU(inplace)
+    )
+    (5): Bottleneck(
+      (conv1): Conv2d(1024, 256, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn1): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv2): Conv2d(256, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+      (bn2): BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv3): Conv2d(256, 1024, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn3): BatchNorm2d(1024, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (relu): ReLU(inplace)
+    )
+  )
+ (layer4): Sequential(
+    (0): Bottleneck(
+      (conv1): Conv2d(1024, 512, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn1): BatchNorm2d(512, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv2): Conv2d(512, 512, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), bias=False)
+      (bn2): BatchNorm2d(512, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv3): Conv2d(512, 2048, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn3): BatchNorm2d(2048, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (relu): ReLU(inplace)
+      (downsample): Sequential(
+        (0): Conv2d(1024, 2048, kernel_size=(1, 1), stride=(2, 2), bias=False)
+        (1): BatchNorm2d(2048, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      )
+    )
+    (1): Bottleneck(
+      (conv1): Conv2d(2048, 512, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn1): BatchNorm2d(512, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv2): Conv2d(512, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+      (bn2): BatchNorm2d(512, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv3): Conv2d(512, 2048, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn3): BatchNorm2d(2048, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (relu): ReLU(inplace)
+    )
+    (2): Bottleneck(
+      (conv1): Conv2d(2048, 512, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn1): BatchNorm2d(512, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv2): Conv2d(512, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+      (bn2): BatchNorm2d(512, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (conv3): Conv2d(512, 2048, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn3): BatchNorm2d(2048, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+      (relu): ReLU(inplace)
+    )
+  )
+  (avgpool): AdaptiveAvgPool2d(output_size=(1, 1))
+  (fc): Linear(in_features=2048, out_features=1000, bias=True)
+)
+====================================================================================================
+                                             Kernel Shape       Output Shape  \
+Layer
+0_conv1                                     [3, 64, 7, 7]  [1, 64, 112, 112]
+1_bn1                                                [64]  [1, 64, 112, 112]
+2_relu                                                  -  [1, 64, 112, 112]
+3_maxpool                                               -    [1, 64, 56, 56]
+4_layer1.0.Conv2d_conv1                    [64, 64, 1, 1]    [1, 64, 56, 56]
+5_layer1.0.BatchNorm2d_bn1                           [64]    [1, 64, 56, 56]
+6_layer1.0.ReLU_relu                                    -    [1, 64, 56, 56]
+7_layer1.0.Conv2d_conv2                    [64, 64, 3, 3]    [1, 64, 56, 56]
+8_layer1.0.BatchNorm2d_bn2                           [64]    [1, 64, 56, 56]
+9_layer1.0.ReLU_relu                                    -    [1, 64, 56, 56]
+10_layer1.0.Conv2d_conv3                  [64, 256, 1, 1]   [1, 256, 56, 56]
+11_layer1.0.BatchNorm2d_bn3                         [256]   [1, 256, 56, 56]
+12_layer1.0.downsample.Conv2d_0           [64, 256, 1, 1]   [1, 256, 56, 56]
+13_layer1.0.downsample.BatchNorm2d_1                [256]   [1, 256, 56, 56]
+14_layer1.0.ReLU_relu                                   -   [1, 256, 56, 56]
+15_layer1.1.Conv2d_conv1                  [256, 64, 1, 1]    [1, 64, 56, 56]
+16_layer1.1.BatchNorm2d_bn1                          [64]    [1, 64, 56, 56]
+17_layer1.1.ReLU_relu                                   -    [1, 64, 56, 56]
+18_layer1.1.Conv2d_conv2                   [64, 64, 3, 3]    [1, 64, 56, 56]
+19_layer1.1.BatchNorm2d_bn2                          [64]    [1, 64, 56, 56]
+20_layer1.1.ReLU_relu                                   -    [1, 64, 56, 56]
+21_layer1.1.Conv2d_conv3                  [64, 256, 1, 1]   [1, 256, 56, 56]
+22_layer1.1.BatchNorm2d_bn3                         [256]   [1, 256, 56, 56]
+23_layer1.1.ReLU_relu                                   -   [1, 256, 56, 56]
+24_layer1.2.Conv2d_conv1                  [256, 64, 1, 1]    [1, 64, 56, 56]
+25_layer1.2.BatchNorm2d_bn1                          [64]    [1, 64, 56, 56]
+26_layer1.2.ReLU_relu                                   -    [1, 64, 56, 56]
+27_layer1.2.Conv2d_conv2                   [64, 64, 3, 3]    [1, 64, 56, 56]
+28_layer1.2.BatchNorm2d_bn2                          [64]    [1, 64, 56, 56]
+29_layer1.2.ReLU_relu                                   -    [1, 64, 56, 56]
+30_layer1.2.Conv2d_conv3                  [64, 256, 1, 1]   [1, 256, 56, 56]
+31_layer1.2.BatchNorm2d_bn3                         [256]   [1, 256, 56, 56]
+32_layer1.2.ReLU_relu                                   -   [1, 256, 56, 56]
+33_layer2.0.Conv2d_conv1                 [256, 128, 1, 1]   [1, 128, 56, 56]
+34_layer2.0.BatchNorm2d_bn1                         [128]   [1, 128, 56, 56]
+35_layer2.0.ReLU_relu                                   -   [1, 128, 56, 56]
+36_layer2.0.Conv2d_conv2                 [128, 128, 3, 3]   [1, 128, 28, 28]
+37_layer2.0.BatchNorm2d_bn2                         [128]   [1, 128, 28, 28]
+38_layer2.0.ReLU_relu                                   -   [1, 128, 28, 28]
+39_layer2.0.Conv2d_conv3                 [128, 512, 1, 1]   [1, 512, 28, 28]
+40_layer2.0.BatchNorm2d_bn3                         [512]   [1, 512, 28, 28]
+41_layer2.0.downsample.Conv2d_0          [256, 512, 1, 1]   [1, 512, 28, 28]
+42_layer2.0.downsample.BatchNorm2d_1                [512]   [1, 512, 28, 28]
+43_layer2.0.ReLU_relu                                   -   [1, 512, 28, 28]
+44_layer2.1.Conv2d_conv1                 [512, 128, 1, 1]   [1, 128, 28, 28]
+45_layer2.1.BatchNorm2d_bn1                         [128]   [1, 128, 28, 28]
+46_layer2.1.ReLU_relu                                   -   [1, 128, 28, 28]
+47_layer2.1.Conv2d_conv2                 [128, 128, 3, 3]   [1, 128, 28, 28]
+48_layer2.1.BatchNorm2d_bn2                         [128]   [1, 128, 28, 28]
+49_layer2.1.ReLU_relu                                   -   [1, 128, 28, 28]
+50_layer2.1.Conv2d_conv3                 [128, 512, 1, 1]   [1, 512, 28, 28]
+51_layer2.1.BatchNorm2d_bn3                         [512]   [1, 512, 28, 28]
+52_layer2.1.ReLU_relu                                   -   [1, 512, 28, 28]
+53_layer2.2.Conv2d_conv1                 [512, 128, 1, 1]   [1, 128, 28, 28]
+54_layer2.2.BatchNorm2d_bn1                         [128]   [1, 128, 28, 28]
+55_layer2.2.ReLU_relu                                   -   [1, 128, 28, 28]
+56_layer2.2.Conv2d_conv2                 [128, 128, 3, 3]   [1, 128, 28, 28]
+57_layer2.2.BatchNorm2d_bn2                         [128]   [1, 128, 28, 28]
+58_layer2.2.ReLU_relu                                   -   [1, 128, 28, 28]
+59_layer2.2.Conv2d_conv3                 [128, 512, 1, 1]   [1, 512, 28, 28]
+60_layer2.2.BatchNorm2d_bn3                         [512]   [1, 512, 28, 28]
+61_layer2.2.ReLU_relu                                   -   [1, 512, 28, 28]
+62_layer2.3.Conv2d_conv1                 [512, 128, 1, 1]   [1, 128, 28, 28]
+63_layer2.3.BatchNorm2d_bn1                         [128]   [1, 128, 28, 28]
+64_layer2.3.ReLU_relu                                   -   [1, 128, 28, 28]
+65_layer2.3.Conv2d_conv2                 [128, 128, 3, 3]   [1, 128, 28, 28]
+66_layer2.3.BatchNorm2d_bn2                         [128]   [1, 128, 28, 28]
+67_layer2.3.ReLU_relu                                   -   [1, 128, 28, 28]
+68_layer2.3.Conv2d_conv3                 [128, 512, 1, 1]   [1, 512, 28, 28]
+69_layer2.3.BatchNorm2d_bn3                         [512]   [1, 512, 28, 28]
+70_layer2.3.ReLU_relu                                   -   [1, 512, 28, 28]
+71_layer3.0.Conv2d_conv1                 [512, 256, 1, 1]   [1, 256, 28, 28]
+72_layer3.0.BatchNorm2d_bn1                         [256]   [1, 256, 28, 28]
+73_layer3.0.ReLU_relu                                   -   [1, 256, 28, 28]
+74_layer3.0.Conv2d_conv2                 [256, 256, 3, 3]   [1, 256, 14, 14]
+75_layer3.0.BatchNorm2d_bn2                         [256]   [1, 256, 14, 14]
+76_layer3.0.ReLU_relu                                   -   [1, 256, 14, 14]
+77_layer3.0.Conv2d_conv3                [256, 1024, 1, 1]  [1, 1024, 14, 14]
+78_layer3.0.BatchNorm2d_bn3                        [1024]  [1, 1024, 14, 14]
+79_layer3.0.downsample.Conv2d_0         [512, 1024, 1, 1]  [1, 1024, 14, 14]
+80_layer3.0.downsample.BatchNorm2d_1               [1024]  [1, 1024, 14, 14]
+81_layer3.0.ReLU_relu                                   -  [1, 1024, 14, 14]
+82_layer3.1.Conv2d_conv1                [1024, 256, 1, 1]   [1, 256, 14, 14]
+83_layer3.1.BatchNorm2d_bn1                         [256]   [1, 256, 14, 14]
+84_layer3.1.ReLU_relu                                   -   [1, 256, 14, 14]
+85_layer3.1.Conv2d_conv2                 [256, 256, 3, 3]   [1, 256, 14, 14]
+86_layer3.1.BatchNorm2d_bn2                         [256]   [1, 256, 14, 14]
+87_layer3.1.ReLU_relu                                   -   [1, 256, 14, 14]
+88_layer3.1.Conv2d_conv3                [256, 1024, 1, 1]  [1, 1024, 14, 14]
+89_layer3.1.BatchNorm2d_bn3                        [1024]  [1, 1024, 14, 14]
+90_layer3.1.ReLU_relu                                   -  [1, 1024, 14, 14]
+91_layer3.2.Conv2d_conv1                [1024, 256, 1, 1]   [1, 256, 14, 14]
+92_layer3.2.BatchNorm2d_bn1                         [256]   [1, 256, 14, 14]
+93_layer3.2.ReLU_relu                                   -   [1, 256, 14, 14]
+94_layer3.2.Conv2d_conv2                 [256, 256, 3, 3]   [1, 256, 14, 14]
+95_layer3.2.BatchNorm2d_bn2                         [256]   [1, 256, 14, 14]
+96_layer3.2.ReLU_relu                                   -   [1, 256, 14, 14]
+97_layer3.2.Conv2d_conv3                [256, 1024, 1, 1]  [1, 1024, 14, 14]
+98_layer3.2.BatchNorm2d_bn3                        [1024]  [1, 1024, 14, 14]
+99_layer3.2.ReLU_relu                                   -  [1, 1024, 14, 14]
+100_layer3.3.Conv2d_conv1               [1024, 256, 1, 1]   [1, 256, 14, 14]
+101_layer3.3.BatchNorm2d_bn1                        [256]   [1, 256, 14, 14]
+102_layer3.3.ReLU_relu                                  -   [1, 256, 14, 14]
+103_layer3.3.Conv2d_conv2                [256, 256, 3, 3]   [1, 256, 14, 14]
+104_layer3.3.BatchNorm2d_bn2                        [256]   [1, 256, 14, 14]
+105_layer3.3.ReLU_relu                                  -   [1, 256, 14, 14]
+106_layer3.3.Conv2d_conv3               [256, 1024, 1, 1]  [1, 1024, 14, 14]
+107_layer3.3.BatchNorm2d_bn3                       [1024]  [1, 1024, 14, 14]
+108_layer3.3.ReLU_relu                                  -  [1, 1024, 14, 14]
+109_layer3.4.Conv2d_conv1               [1024, 256, 1, 1]   [1, 256, 14, 14]
+110_layer3.4.BatchNorm2d_bn1                        [256]   [1, 256, 14, 14]
+111_layer3.4.ReLU_relu                                  -   [1, 256, 14, 14]
+112_layer3.4.Conv2d_conv2                [256, 256, 3, 3]   [1, 256, 14, 14]
+113_layer3.4.BatchNorm2d_bn2                        [256]   [1, 256, 14, 14]
+114_layer3.4.ReLU_relu                                  -   [1, 256, 14, 14]
+115_layer3.4.Conv2d_conv3               [256, 1024, 1, 1]  [1, 1024, 14, 14]
+116_layer3.4.BatchNorm2d_bn3                       [1024]  [1, 1024, 14, 14]
+117_layer3.4.ReLU_relu                                  -  [1, 1024, 14, 14]
+118_layer3.5.Conv2d_conv1               [1024, 256, 1, 1]   [1, 256, 14, 14]
+119_layer3.5.BatchNorm2d_bn1                        [256]   [1, 256, 14, 14]
+120_layer3.5.ReLU_relu                                  -   [1, 256, 14, 14]
+121_layer3.5.Conv2d_conv2                [256, 256, 3, 3]   [1, 256, 14, 14]
+122_layer3.5.BatchNorm2d_bn2                        [256]   [1, 256, 14, 14]
+123_layer3.5.ReLU_relu                                  -   [1, 256, 14, 14]
+124_layer3.5.Conv2d_conv3               [256, 1024, 1, 1]  [1, 1024, 14, 14]
+125_layer3.5.BatchNorm2d_bn3                       [1024]  [1, 1024, 14, 14]
+126_layer3.5.ReLU_relu                                  -  [1, 1024, 14, 14]
+127_layer4.0.Conv2d_conv1               [1024, 512, 1, 1]   [1, 512, 14, 14]
+128_layer4.0.BatchNorm2d_bn1                        [512]   [1, 512, 14, 14]
+129_layer4.0.ReLU_relu                                  -   [1, 512, 14, 14]
+130_layer4.0.Conv2d_conv2                [512, 512, 3, 3]     [1, 512, 7, 7]
+131_layer4.0.BatchNorm2d_bn2                        [512]     [1, 512, 7, 7]
+132_layer4.0.ReLU_relu                                  -     [1, 512, 7, 7]
+133_layer4.0.Conv2d_conv3               [512, 2048, 1, 1]    [1, 2048, 7, 7]
+134_layer4.0.BatchNorm2d_bn3                       [2048]    [1, 2048, 7, 7]
+135_layer4.0.downsample.Conv2d_0       [1024, 2048, 1, 1]    [1, 2048, 7, 7]
+136_layer4.0.downsample.BatchNorm2d_1              [2048]    [1, 2048, 7, 7]
+137_layer4.0.ReLU_relu                                  -    [1, 2048, 7, 7]
+138_layer4.1.Conv2d_conv1               [2048, 512, 1, 1]     [1, 512, 7, 7]
+139_layer4.1.BatchNorm2d_bn1                        [512]     [1, 512, 7, 7]
+140_layer4.1.ReLU_relu                                  -     [1, 512, 7, 7]
+141_layer4.1.Conv2d_conv2                [512, 512, 3, 3]     [1, 512, 7, 7]
+142_layer4.1.BatchNorm2d_bn2                        [512]     [1, 512, 7, 7]
+143_layer4.1.ReLU_relu                                  -     [1, 512, 7, 7]
+144_layer4.1.Conv2d_conv3               [512, 2048, 1, 1]    [1, 2048, 7, 7]
+145_layer4.1.BatchNorm2d_bn3                       [2048]    [1, 2048, 7, 7]
+146_layer4.1.ReLU_relu                                  -    [1, 2048, 7, 7]
+147_layer4.2.Conv2d_conv1               [2048, 512, 1, 1]     [1, 512, 7, 7]
+148_layer4.2.BatchNorm2d_bn1                        [512]     [1, 512, 7, 7]
+149_layer4.2.ReLU_relu                                  -     [1, 512, 7, 7]
+150_layer4.2.Conv2d_conv2                [512, 512, 3, 3]     [1, 512, 7, 7]
+151_layer4.2.BatchNorm2d_bn2                        [512]     [1, 512, 7, 7]
+152_layer4.2.ReLU_relu                                  -     [1, 512, 7, 7]
+153_layer4.2.Conv2d_conv3               [512, 2048, 1, 1]    [1, 2048, 7, 7]
+154_layer4.2.BatchNorm2d_bn3                       [2048]    [1, 2048, 7, 7]
+155_layer4.2.ReLU_relu                                  -    [1, 2048, 7, 7]
+156_avgpool                                             -    [1, 2048, 1, 1]
+157_fc                                       [2048, 1000]          [1, 1000]
+...具体参数信息略去
 ```
 
 
@@ -386,10 +934,6 @@ def ResNet152():
 
 
 8.ip-CSN
-
-
-
-9.GhostNet-3D
 
 
 
