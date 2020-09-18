@@ -915,27 +915,11 @@ Layer
 
 4.MobileNetV2
 
+5.ShuffleNetV2
 
+6.GhostNet
 
-
-
-5.GhostNet
-
-
-
-
-
-6.ResNet-3D
-
-
-
-7.R(2+1)D
-
-
-
-8.ip-CSN
-
-
+（4,5,6代码见repo：" https://github.com/fourierer/Learn_GhostNet_pytorch "）
 
 
 
