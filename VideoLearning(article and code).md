@@ -108,7 +108,7 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # 设置当前使用的GPU设备仅为
 
 argparse是命令行参数解析模块，使用时需要import argparse，使用该工具可以直接在linux命令行中进行调参，不需要在.py文件中修改参数。下面进行测试说明该模块的用法。
 
-https://blog.csdn.net/huangfei711/article/details/80325946?depth_1-utm_source=distribute.pc_relevant.none-task&utm_source=distribute.pc_relevant.none-task， 链接中是各种情况，主要有：--和-都可以进行赋值，--是全称，-是缩写，不加-和--的表示必须要赋值参数；action=’store_true’，表示该选项不需要接收参数，直接设定该参数为 true。
+https://blog.csdn.net/huangfei711/article/details/80325946?depth_1-utm_source=distribute.pc_relevant.none-task&utm_source=distribute.pc_relevant.none-task， 链接中是各种情况，主要有：--和-都可以进行赋值，--是全称，-是缩写，不加-和--的表示必须要赋值参数；action=’store_true’，表示该选项不需要接收参数，只需指定，如python test.py --evaluate.即可设定该参数为 true；如果不写明，则为false。
 
 1).代码(Test.py)：
 
@@ -774,29 +774,29 @@ $z_i=W_zy_i+x_i$,
 
 问题：
 
-1)figure2中non-local机制体现在哪一步？？如何体现长范围依赖？？
+1)figure2中block如何和公式（1）联系？即如何体现一个位置$x_i$和其他位置$x_j$的长范围依赖（Non-Local）关系？
 
-将输入的$x$看为一个整视频，有$T$帧，每一帧规模为$H*W$，1024个channel(已经经过一些卷积核)。
+将输入的$x$看为一个整视频，有$T$帧，每一帧空间尺寸为$H*W$，1024个channel(已经经过一些卷积核的结果)，则公式（1）中的$x_i$指的是$1024*1$的向量：要明确公式中位置的概念，一个$T$帧的视频，空间规模是$H*W$，则在时空上共有$THW$个位置，每个位置$x_i$都是一个$1024*1$的向量，下面解释Non-Local（长范围依赖关系）：
 
 **权重部分**：
 
-$T*H*W*1024$通过$1*1*1*512$卷积核($\theta$)变为$T*H*W*512$，将$T$帧的pixel平铺为一个向量($T*W*H$的feature拉伸为一个向量)，变为$THW*512$的矩阵，每一列都是所有的pixel，作为$\theta(x)$；
+$T*H*W*1024$通过$1024*1*1*1*512$卷积核(即$W_{1024*512}$)变为$T*H*W*512$，这一步相当于$\theta(x)$，即$Wx$，将$1024*1$的$x_i$变为$512*1$的$x_i$，此时每个位置都是$\theta(x_i)$。再将$T$帧的pixel平铺为一个向量($T*W*H$的feature拉伸为一个向量)，变为$THW*512$的矩阵，每一列都是一个位置$x_i$；
 
-$T*H*W*1024$通过$1*1*1*512$卷积核($\phi$)变为$T*H*W*512$，将$T$帧的pixel平铺为一个向量($T*W*H$的feature拉伸为一个向量)，变为$THW*512$的矩阵，每一列都是所有的pixel，转置一下每一行都是所有的pixel，作为$\phi(x)$；
+$T*H*W*1024$通过$1*1*1*512$卷积核($\phi$)变为$T*H*W*512$，将$T$帧的pixel平铺为一个向量($T*W*H$的feature拉伸为一个向量)，变为$THW*512$的矩阵，每一列都是一个位置$x_j$，转置一下每一行都是一个位置$x_j$；
 
-$\theta(x)\phi(x)$是$THW*THW$的矩阵，元素$a_{ij}$可以看作$f(x_i,x_j)$，再对每一行做归一化(每一个元素除以该行元素的和)，相当于$softmax$。元素$a_{ij}$是pixel中$x_i,x_j$之间的权重系数(0-1之间)，相当于$\frac{1}{C(x)}f(x_i,x_j)$。
+$\theta(x)\phi(x)$是$THW*THW$的矩阵，元素$a_{ij}$可以看作$\theta(x_i)\phi(x_j)$，再对每一行做归一化(每一个元素除以该行元素的和)，相当于$softmax$。元素$a_{ij}$是pixel中$x_i,x_j$之间的权重系数(0-1之间)，相当于$\frac{1}{C(x)}f(x_i,x_j)$。
 
-**原始信号部分**：
+**原始信号transformer**：
 
-$T*H*W*1024$通过$1*1*1*512$卷积核($g$)变为$T*H*W*512$，将$T$帧的pixel平铺为一个向量($T*W*H$的feature拉伸为一个向量)，变为$THW*512$的矩阵，每一列都是所有的pixel，作为$g(x)$。
+$T*H*W*1024$通过$1*1*1*512$卷积核($g$)变为$T*H*W*512$，将$T$帧的pixel平铺为一个向量($T*W*H$的feature拉伸为一个向量)，变为$THW*512$的矩阵，每一列都是一个位置$x_j$，作为$g(x)$。
 
-**乘积**
+**原始信号transformer和权重部分的加权乘积**：
 
-将权重部分($THW*THW$)和原始信号部分($THW*512$)的结果相乘，结果为$THW*512$，权重部分的第$i$行乘以原始信号的第$j$列相当于$\frac{1}{C(x)}\sum_jf(x_i,x_j)g(x_j)$.
+将权重部分($THW*THW$)和原始信号transformer部分($THW*512$)的结果相乘，结果为$THW*512$，权重部分的第$i$行乘以原始信号transformer的第$j$列相当于$\frac{1}{C(x)}\sum_jf(x_i,x_j)g(x_j)$.
 
-**残差块**
+**残差块$z_i=W_zy_i+x_i$**：
 
-最后与原始信号相加即为残差块。
+加权乘积的结果为$y$，共$THW$个位置，每个位置是一个$512*1$向量$y_i$，还要经过一个$1*1*1$卷积$W_z$，最后和原始信号相加整体视为残差块。
 
 
 
