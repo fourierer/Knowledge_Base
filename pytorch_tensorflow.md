@@ -1012,24 +1012,175 @@ print('final acc in Test data:' + str(eval_acc / len(test_data)))
 
 #### 三、加载模型进行预训练
 
-（1）模型加载
+1.模型的保存和加载
 
-一般模型会保存为.pth文件或者保存为tar包（一般tar包是一个字典，保存了模型参数以及训练的一些信息，如训练epoch数，学习率等），加载方法分别是：
+在介绍模型保存和加载之前先介绍一段测试代码：
 
 ```python
-model = ghost_net()
-model.load_state_dict(torch.load('./xxx.pth'))
+from torchvision.models import resnet18
+from torch.nn.parallel import DataParallel
+
+model = resnet18() # 网络没有并行，当前默认在单张卡上，参数为单卡形式
+
+print('###############################')
+cnt = 0
+for k in model.state_dict():
+    if cnt>5:
+        break
+    print(k)
+    cnt += 1
+# 从输出结果来看参数中没有module
+'''
+上述代码如果改成下面这样，则会报错：
+AttributeError: 'ResNet' object has no attribute 'modeule'
+因为在模型没有
+print('###############################')
+cnt = 0
+for k in model.modeule.state_dict():
+    if cnt>5:
+        break
+    print(k)
+    cnt += 1
+'''
+
+print('##############################')
+model = DataParallel(model) # 网络并行，当前网络参数为多卡形式
+
+cnt = 0
+for k in model.state_dict():
+    if cnt>5:
+        break
+    print(k)
+    cnt += 1
+# 从输出结果来看参数中有module
+
+print('###############################')
+cnt = 0
+for k in model.module.state_dict():
+    if cnt>5:
+        break
+    print(k)
+    cnt += 1
+#当for循环中已经指定module之后，参数输出结果又没有了module
+
+
+#输出结果：
+'''
+###############################
+conv1.weight
+bn1.weight
+bn1.bias
+bn1.running_mean
+bn1.running_var
+bn1.num_batches_tracked
+##############################
+module.conv1.weight
+module.bn1.weight
+module.bn1.bias
+module.bn1.running_mean
+module.bn1.running_var
+module.bn1.num_batches_tracked
+###############################
+conv1.weight
+bn1.weight
+bn1.bias
+bn1.running_mean
+bn1.running_var
+bn1.num_batches_tracked
+'''
 ```
 
+模型的加载方法根据保存方式来定，如：
+
+（1）下面代码是一般分类任务训练代码中常用的，模型会保存为一个tar包（一般tar包是一个字典，保存了模型参数以及训练的一些信息，如训练epoch数，学习率等），加载方法是：
+
 ```python
-model = ghost_net()
+#模型保存
+def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
+    torch.save(state, filename)
+    if is_best:
+        shutil.copyfile(filename, 'model_best.pth.tar')
+
+save_checkpoint({
+                'epoch': epoch + 1,
+                'arch': args.arch,
+                'state_dict': model.module.state_dict(),
+                'best_acc1': best_acc1,
+            }, is_best)
+
+#模型加载
+model = xxx_net()
 checkpoint = torch.load('./xxx.pth.tar')
 model.load_state_dict(checkpoint['state_dict'])
 ```
 
+简单改动一下save_chaeckpoint函数，模型的加载方式会改变：
+
+```python
+#模型保存
+def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
+    torch.save(state['state_dict'], filename)
+    if is_best:
+        shutil.copyfile(filename, 'model_best.pth.tar')
+
+save_checkpoint({
+                'epoch': epoch + 1,
+                'arch': args.arch,
+                'state_dict': model.module.state_dict(),
+                'best_acc1': best_acc1,
+            }, is_best)
+model = ghost_net()
+model.load_state_dict(torch.load('./xxx.pth'))
+```
 
 
-（2）加载预训练模型
+
+（2）一般在训练的时候会使用并行工具，如测试的代码中的Dataparallel，使得网络参数变成了多卡形式，键包含module。上述（1）中代码在保存的时候使用了model.module.state_dict()，则使得保存的模型参数的键中就不再有module，加载的时候可以使用单卡去测试推理，如：
+
+```python
+model = xx_net()
+# 加载时不用先将model并行化
+checkpoint = torch.load('./model_best.pth.tar')
+model.load_state_dict(checkpoint['state_dict'])
+model.eval()  # 固定batchnorm，dropout等，一定要有
+model = model.to(device)
+```
+
+但如果训练时使用了并行工具，并且保存时保留了module，如：
+
+```python
+model = xxx_net()
+torch.cuda.set_device('cuda:{}'.format(gpus[0]))
+model.cuda()
+# 使用并行工具Dataparallel
+model = nn.DataParallel(model, device_ids=gpus, output_device=gpus[0])
+
+
+#模型保存时保留了module，即state_dict键对应的是model.state_dict()
+def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
+    torch.save(state, filename)
+    if is_best:
+        shutil.copyfile(filename, 'model_best.pth.tar')
+
+save_checkpoint({
+                'epoch': epoch + 1,
+                'arch': args.arch,
+                'state_dict': model.state_dict(),
+                'best_acc1': best_acc1,
+            }, is_best)
+
+#此时再进行模型加载时，一定要将定义的model先进行并行化，再加载保存的模型
+model = xxx_net()
+gpus=[0,1,2,3]
+model = torch.nn.DataParallel(model, device_ids=gpus).cuda()
+model.load_state(torch.load('model_best.pth'))
+```
+
+
+
+
+
+（3）加载预训练模型
 
 现在模型训练基本上都会采用预训练的方式，在一个大的数据集上训好了模型参数，再加载到一个小的数据集上继续训练。在不同的任务中模型结构会不一样，比如分类数量发生改变。这里以分类问题为例，介绍加载模型进行预训练的方法，一般来说有三种写法：
 
