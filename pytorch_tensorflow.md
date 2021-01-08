@@ -1381,6 +1381,157 @@ state_dict = torch.hub.load_state_dict_from_url('https://s3.amazonaws.com/pytorc
 
 
 
+#### 五、固定模型参数，只训练其中一部分参数
+
+想固定那个参数，只需要将变量的requires_grad设为False即可，然后再优化器中过滤掉，如：
+
+```python
+optimizer.SGD(filter(lambda p: p.requires_grad, model.parameters()), lr=1e-3)
+```
+
+具体如何设置变量的requires_grad，这里给出一段代码：
+
+```python
+class Net(nn.Module):
+    self.__init__(self,block, layers, **kwargs):
+        xxx
+    def forward():
+        xxx
+    def init_weights(self, pretrained=''):
+        if os.path.isfile(pretrained):
+            logger.info('=> init deconv weights from normal distribution')
+            for name, m in self.deconv_layers.named_modules():
+                if isinstance(m, nn.ConvTranspose2d):
+                    logger.info('=> init {}.weight as normal(0, 0.001)'.format(name))
+                    logger.info('=> init {}.bias as 0'.format(name))
+                    nn.init.normal_(m.weight, std=0.001)
+                    if self.deconv_with_bias:
+                        nn.init.constant_(m.bias, 0)
+                elif isinstance(m, nn.BatchNorm2d):
+                    logger.info('=> init {}.weight as 1'.format(name))
+                    logger.info('=> init {}.bias as 0'.format(name))
+                    nn.init.constant_(m.weight, 1)
+                    nn.init.constant_(m.bias, 0)
+            logger.info('=> init final conv weights from normal distribution')
+            for m in self.final_layer.modules():
+                if isinstance(m, nn.Conv2d):
+                    # nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                    logger.info('=> init {}.weight as normal(0, 0.001)'.format(name))
+                    logger.info('=> init {}.bias as 0'.format(name))
+                    nn.init.normal_(m.weight, std=0.001)
+                    nn.init.constant_(m.bias, 0)
+            
+            logger.info('=> init fc weights from normal distribution')
+            for m in self.classifer.modules():
+                if isinstance(m, nn.Linear):
+                    # nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                    logger.info('=> init {}.weight as normal(0, 0.001)'.format(name))
+                    logger.info('=> init {}.bias as 0'.format(name))
+                    nn.init.normal_(m.weight, std=0.001)
+                    nn.init.constant_(m.bias, 0)
+
+            # pretrained_state_dict = torch.load(pretrained)
+            logger.info('=> loading pretrained model {}'.format(pretrained))
+            # self.load_state_dict(pretrained_state_dict, strict=False)
+            checkpoint = torch.load(pretrained)
+            if isinstance(checkpoint, OrderedDict):
+                state_dict = checkpoint
+            elif isinstance(checkpoint, dict) and 'state_dict' in checkpoint:
+                state_dict_old = checkpoint['state_dict']
+                state_dict = OrderedDict()
+                # delete 'module.' because it is saved from DataParallel module
+                for key in state_dict_old.keys():
+                    if key.startswith('module.'):
+                        # state_dict[key[7:]] = state_dict[key]
+                        # state_dict.pop(key)
+                        state_dict[key[7:]] = state_dict_old[key]
+                    else:
+                        state_dict[key] = state_dict_old[key]
+            else:
+                raise RuntimeError(
+                    'No state_dict found in checkpoint file {}'.format(pretrained))
+            self.load_state_dict(state_dict, strict=False)
+        else:
+            logger.error('=> pretrained model dose not exist')
+            logger.error('=> please download it first')
+            raise ValueError('pretrained model does not exist')
+
+
+resnet_spec = {18: (BasicBlock, [2, 2, 2, 2]),
+               34: (BasicBlock, [3, 4, 6, 3]),
+               50: (Bottleneck, [3, 4, 6, 3]),
+               101: (Bottleneck, [3, 4, 23, 3]),
+               152: (Bottleneck, [3, 8, 36, 3])}
+
+
+def pose_resnet_adver2(args, is_train, **kwargs):
+    num_layers = args.resnet_layers # 默认是50
+
+    block_class, layers = resnet_spec[num_layers]
+
+    model = PoseResNetAdver2(block_class, layers, **kwargs)
+    if is_train:
+        model.init_weights(args.resume)
+
+    return model
+
+
+if __name__ == '__main__':
+    num_layers = 50
+    block_class, layers = resnet_spec[num_layers]
+    model1 = Net(block_class, layers)
+    model2 = Net(block_class, layers)
+    '''
+    print(model)
+    x = torch.rand([64, 3, 256, 256])
+    y1, y2 = model(x)
+    summary(model, x)
+    print(y1.size())
+    print(y2.size())
+    '''
+    for name,param in model1.named_parameters():
+        # print(name)
+        
+        # 固定其他参数，只改变分类器的参数，nn.Linear是没有requires_grad的，需要指定（原因未知）
+        if (name=='classifer.weight')|(name=='classifer.bias'):
+            param.requires_grad = True
+        else:
+            param.requires_grad = False
+        '''
+        if (name!='classifer.weight')|(name!='classifer.bias'):
+            param.requires_grad = False
+        else:
+            param.requires_grad = True
+        '''
+        # 注意，如果换成以上引号中的代码，下面代码将无法输出classifer.weight和classifer.bias
+        # 这里由于是线性层nn.Linear需要特别指定（具体原因未知）
+        if param.requires_grad:
+            print(name) # classifer.weight,classifer.bias
+    # 训好的分类器
+    # checkpoint1 = torch.load('xxx.pth')
+    # model1.load_state_dict(checkpoint1['state_dict'])
+    model1.init_weights('xxx.pth')
+    # 原始模型
+    # checkpoint2 = torch.load('xxx.pth')
+    # model2.load_state_dict(checkpoint2['state_dict'])
+    model2.init_weights('xxx.pth')
+    # 查看固定层的参数是否一样，以及没有固定的层参数是否不一样
+    for name,param in model1.named_parameters():
+        if name=='layer4.0.conv3.weight':
+            print(param[0][3])
+        if name=='classifer.weight':
+            print(param[0][2])
+    for name,param in model2.named_parameters():
+        if name=='layer4.0.conv3.weight':
+            print(param[0][3])
+        if name=='classifer.weight':
+            print(param[0][2])
+```
+
+
+
+
+
 ### Tensorflow
 
 
