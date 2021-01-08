@@ -53,6 +53,7 @@ tmp = torch.randn((3, 2)) # 定义Tensor
 
 if torch.cuda.is_available():
   inputs = tmp.cuda() # Tensor转换为GPU上的数据类型
+tmp = inputs.cpu() # Tensor转换为CPU上的数据类型
 ```
 
 （2）张量的拆分：torch.split()和torch.chunk()
@@ -88,7 +89,125 @@ if torch.cuda.is_available():
 
 
 
-2.变量，Variable
+2.张量，tensor
+
+1中介绍了很多关于Tensor的知识，正常情况下pytorch的模型参数都是Tensor形式（32位浮点型），有时候是不够用的，所以需要tensor类型，pytorch中常用的tensor类型包括：
+
+```python
+torch.FloatTensor() # 32位浮点型
+torch.DoubleTensor # 64位浮点型
+torch.ShortTensor # 16位整型
+torch.IntTensor # 32位整型
+torch.LongTensor # 64位整型
+```
+
+
+
+在pytorch中，Tensor和tensor都能用于生成张量：
+
+```python
+import torch
+a = torch.Tensor([1,2,3]) # tensor([1.0,2.0,3.0])
+b = torch.tensor([1,2,3]) # tensor([1,2,3])
+```
+
+从上述中已经可以看出一点差别了，torch.Tensor会生成浮点型数，而torch.tensor可以生成整形数。
+
+torch.Tensor()是python类，**是默认张量类型torch.FloatTensor()的别名**，torch.Tensor([1,2])会调用Tensor类的构造函数\__init__，生成单精度浮点类型的张量。
+
+torch.tensor()仅仅是python函数，函数原型是：
+
+```python
+torch.tensor(data, dtype=None, device=None, requires_grad=False)
+```
+
+其中data可以是：list, tuple, NumPy ndarray, scalar和其他类型。torch.tensor会从data中的数据部分做拷贝（而不是直接引用），根据原始数据类型生成相应的torch.LongTensor、torch.FloatTensor和torch.DoubleTensor。
+
+总体来说：
+
+（1）在数据类型上，torch.tensor（包括整型，浮点型等）实际上包括了torch.Tensor（只是32浮点型的别名）；
+
+（2）torch.tensor可以接受list，tuple等，而torch.Tensor在接受一个数字时，会默认为尺寸，而不是一个变量：
+
+```python
+>>> a=torch.tensor(1)
+>>> a
+tensor(1)
+>>> a.type()
+'torch.LongTensor'
+>>> a=torch.Tensor(1)
+>>> a
+tensor([0.])
+>>> a.type()
+'torch.FloatTensor'
+```
+
+
+
+3.类型转换
+
+在1中，介绍了Tensor与numpy之间的转换，以及Tensor变量在GPU和CPU之间的转换，由于Tensor只是tensor的一种类型，所以tensor和numpy之间的转换方式和Tensor一样。下面主要介绍tensor和Tensor之间的转换方式，即下面几种类型的转换：
+
+```python
+torch.FloatTensor() # 32位浮点型
+torch.DoubleTensor # 64位浮点型
+torch.ShortTensor # 16位整型
+torch.IntTensor # 32位整型
+torch.LongTensor # 64位整型
+```
+
+（1）通过在tensor后面加long()，int()等函数转换
+
+```python
+>>> a = torch.tensor([1,2,3])
+>>> a.type()
+'torch.LongTensor'
+>>> b = a.int()
+>>> b
+tensor([1, 2, 3], dtype=torch.int32)
+>>> b.type()
+'torch.IntTensor'
+>>> c = a.short()
+>>> c
+tensor([1, 2, 3], dtype=torch.int16)
+>>> d = a.float()
+>>> d
+tensor([1., 2., 3.])
+>>> d.type()
+'torch.FloatTensor'
+>>> e = a.double()
+>>> e
+tensor([1., 2., 3.], dtype=torch.float64)
+>>> e.type()
+'torch.DoubleTensor'
+# 注意：此时a还是torch.LongTensor类型
+```
+
+（2）通过type()函数转换
+
+```python
+>>> a = torch.tensor([1,2,3])
+>>> a
+tensor([1, 2, 3])
+>>> a.type()
+'torch.LongTensor'
+>>> b = a.type(torch.FloatTensor)
+>>> b
+tensor([1., 2., 3.])
+>>> b.type()
+'torch.FloatTensor'
+>>> c = a.type(torch.DoubleTensor)
+>>> c
+tensor([1., 2., 3.], dtype=torch.float64)
+>>> c.type()
+'torch.DoubleTensor'
+```
+
+
+
+
+
+4.变量，Variable
 
 Variable类型数据功能更加强大，相当于是在Tensor外层套了一个壳子，这个壳子赋予了前向传播，反向传播，自动求导。
 
@@ -152,7 +271,18 @@ class Batch_Net(nn.Module):
         return x
 ```
 
-**注：nn.ReLU() 和 nn.ReLU(inplace=True)对计算结果不会有影响。利用inplace计算可以节省内（显）存，同时还可以省去反复申请和释放内存的时间。但是会对原变量覆盖，只要不带来错误就用。**
+**注：**
+
+**1.nn.ReLU() 和 nn.ReLU(inplace=True)对计算结果不会有影响。利用inplace计算可以节省内（显）存，同时还可以省去反复申请和释放内存的时间。但是会对原变量覆盖，只要不带来错误就用；**
+
+**2.pytorch定义类中有个forward函数，该函数的功能类似于python类的内置函数__call__，可以直接将类当场函数调用，如：**
+
+```
+model = Net()
+out = model(input)
+```
+
+有时候也把损失函数定义为类，可以直接当成函数进行调用。
 
 
 
