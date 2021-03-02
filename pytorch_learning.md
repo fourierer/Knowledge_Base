@@ -205,15 +205,403 @@ tensor([1., 2., 3.], dtype=torch.float64)
 
 
 
+4.改变形状
+
+用view()来改变Tensor的形状：
+
+``` python
+x = torch.rand(5,3)
+y = x.view(15)
+z = x.view(-1, 5)  # -1所指的维度可以根据其他维度的值推出来
+print(x.size(), y.size(), z.size())
+```
+
+输出：
+
+```
+torch.Size([5, 3]) torch.Size([15]) torch.Size([3, 5])
+```
+
+**注意view()返回的新tensor与源tensor共享内存（其实是同一个tensor），也即更改其中的一个，另外一个也会跟着改变。(顾名思义，view仅仅是改变了对这个张量的观察角度)**
+
+``` python
+x += 1
+print(x)
+print(y) # 也加了1
+```
+
+输出：
+
+```
+tensor([[1.6035, 1.8110, 0.9549],
+        [1.8797, 2.0482, 0.9555],
+        [0.2771, 3.8663, 0.4345],
+        [1.1604, 0.9746, 2.0739],
+        [3.2628, 0.0825, 0.7749]])
+tensor([1.6035, 1.8110, 0.9549, 1.8797, 2.0482, 0.9555, 0.2771, 3.8663, 0.4345,
+        1.1604, 0.9746, 2.0739, 3.2628, 0.0825, 0.7749])
+```
+
+所以如果我们想返回一个真正新的副本（即不共享内存）该怎么办呢？Pytorch还提供了一个reshape()可以改变形状，但是此函数并不能保证返回的是其拷贝，所以不推荐使用。推荐先用clone创造一个副本然后再使用view。[参考此处](https://stackoverflow.com/questions/49643225/whats-the-difference-between-reshape-and-view-in-pytorch)
+
+``` python
+x_cp = x.clone().view(15)
+x -= 1
+print(x)
+print(x_cp)
+```
+
+输出:
+
+```
+tensor([[ 0.6035,  0.8110, -0.0451],
+        [ 0.8797,  1.0482, -0.0445],
+        [-0.7229,  2.8663, -0.5655],
+        [ 0.1604, -0.0254,  1.0739],
+        [ 2.2628, -0.9175, -0.2251]])
+tensor([1.6035, 1.8110, 0.9549, 1.8797, 2.0482, 0.9555, 0.2771, 3.8663, 0.4345,
+        1.1604, 0.9746, 2.0739, 3.2628, 0.0825, 0.7749])
+```
+
+使用clone还有一个好处是会被记录在计算图中，即梯度回传到副本时也会传到源Tensor。另外一个常用的函数就是`item()`, 它可以将一个标量`Tensor`转换成一个Python number：
+
+``` python
+x = torch.randn(1)
+print(x)
+print(x.item())
+print(type(x.item()))
+```
+
+输出：
+
+```
+tensor([2.3466])
+2.3466382026672363
+<class 'float'>
+```
 
 
-4.变量，Variable
 
-Variable类型数据功能更加强大，相当于是在Tensor外层套了一个壳子，这个壳子赋予了前向传播，反向传播，自动求导。
+5.运算的内存开销
+
+索引、view是不会开辟新内存的，而像$y = x + y$这样的运算是会新开内存的，然后将$y$指向新内存。为了演示这一点，我们可以使用Python自带的id函数：如果两个实例的ID一致，那么它们所对应的内存地址相同；反之则不同。
+
+``` python
+x = torch.tensor([1, 2])
+y = torch.tensor([3, 4])
+id_before = id(y)
+y = y + x
+print(id(y) == id_before) # False 
+```
+
+如果想指定结果到原来的`y`的内存，我们可以使用前面介绍的索引来进行替换操作。在下面的例子中，我们把`x + y`的结果通过`[:]`写进`y`对应的内存中。
+
+``` python
+x = torch.tensor([1, 2])
+y = torch.tensor([3, 4])
+id_before = id(y)
+y[:] = y + x
+print(id(y) == id_before) # True
+```
+
+我们还可以使用运算符全名函数中的`out`参数或者自加运算符`+=`(也即`add_()`)达到上述效果，例如`torch.add(x, y, out=y)`和`y += x`(`y.add_(x)`)。
+
+``` python
+x = torch.tensor([1, 2])
+y = torch.tensor([3, 4])
+id_before = id(y)
+torch.add(x, y, out=y) # y += x, y.add_(x)
+print(id(y) == id_before) # True
+```
 
 
 
-#### 二、搭建神经网络模型
+6.求梯度
+
+创建一个`Tensor`并设置`requires_grad=True`:
+
+``` python
+x = torch.ones(2, 2, requires_grad=True)
+print(x)
+print(x.grad_fn)
+```
+
+输出：
+
+```
+tensor([[1., 1.],
+        [1., 1.]], requires_grad=True)
+None
+```
+
+再做一下运算操作：
+
+``` python
+y = x + 2
+print(y)
+print(y.grad_fn)
+```
+
+输出：
+
+```
+tensor([[3., 3.],
+        [3., 3.]], grad_fn=<AddBackward>)
+<AddBackward object at 0x1100477b8>
+```
+
+注意x是直接创建的，所以它没有`grad_fn`, 而y是通过一个加法操作创建的，所以它有一个为`<AddBackward>`的`grad_fn`。
+
+像x这种直接创建的称为叶子节点，叶子节点对应的`grad_fn`是`None`。
+
+``` python
+print(x.is_leaf, y.is_leaf) # True False
+```
+
+
+再来点复杂度运算操作：
+
+``` python
+z = y * y * 3
+out = z.mean()
+print(z, out)
+```
+
+输出：
+
+```
+tensor([[27., 27.],
+        [27., 27.]], grad_fn=<MulBackward>) tensor(27., grad_fn=<MeanBackward1>)
+```
+
+通过`.requires_grad_()`来用in-place的方式改变`requires_grad`属性：
+
+``` python
+a = torch.randn(2, 2) # 缺失情况下默认 requires_grad = False
+a = ((a * 3) / (a - 1))
+print(a.requires_grad) # False
+a.requires_grad_(True)
+print(a.requires_grad) # True
+b = (a * a).sum()
+print(b.grad_fn)
+```
+
+输出：
+
+```
+False
+True
+<SumBackward0 object at 0x118f50cc0>
+```
+
+## 
+
+因为`out`是一个标量，所以调用`backward()`时不需要指定求导变量：
+
+``` python
+out.backward() # 等价于 out.backward(torch.tensor(1.))
+```
+
+我们来看看`out`关于`x`的梯度 $\frac{d(out)}{dx}$:
+
+``` python
+print(x.grad)
+```
+
+输出：
+
+```
+tensor([[4.5000, 4.5000],
+        [4.5000, 4.5000]])
+```
+
+我们令`out`为 $o$ , 因为
+$$
+o=\frac14\sum_{i=1}^4z_i=\frac14\sum_{i=1}^43(x_i+2)^2
+$$
+所以
+$$
+\frac{\partial{o}}{\partial{x_i}}\bigr\rvert_{x_i=1}=\frac{9}{2}=4.5
+$$
+所以上面的输出是正确的。
+
+数学上，如果有一个函数值和自变量都为向量的函数 $\vec{y}=f(\vec{x})$, 那么 $\vec{y}$ 关于 $\vec{x}$ 的梯度就是一个雅可比矩阵（Jacobian matrix）:
+$$
+J=\left(\begin{array}{ccc}
+   \frac{\partial y_{1}}{\partial x_{1}} & \cdots & \frac{\partial y_{1}}{\partial x_{n}}\\
+   \vdots & \ddots & \vdots\\
+   \frac{\partial y_{m}}{\partial x_{1}} & \cdots & \frac{\partial y_{m}}{\partial x_{n}}
+   \end{array}\right)
+$$
+而``torch.autograd``这个包就是用来计算一些雅克比矩阵的乘积的。例如，如果 $v$ 是一个标量函数的 $l=g\left(\vec{y}\right)$ 的梯度：
+$$
+v=\left(\begin{array}{ccc}\frac{\partial l}{\partial y_{1}} & \cdots & \frac{\partial l}{\partial y_{m}}\end{array}\right)
+$$
+那么根据链式法则我们有 $l$ 关于 $\vec{x}$ 的雅克比矩阵就为:
+$$
+v J=\left(\begin{array}{ccc}\frac{\partial l}{\partial y_{1}} & \cdots & \frac{\partial l}{\partial y_{m}}\end{array}\right) \left(\begin{array}{ccc}
+   \frac{\partial y_{1}}{\partial x_{1}} & \cdots & \frac{\partial y_{1}}{\partial x_{n}}\\
+   \vdots & \ddots & \vdots\\
+   \frac{\partial y_{m}}{\partial x_{1}} & \cdots & \frac{\partial y_{m}}{\partial x_{n}}
+   \end{array}\right)=\left(\begin{array}{ccc}\frac{\partial l}{\partial x_{1}} & \cdots & \frac{\partial l}{\partial x_{n}}\end{array}\right)
+$$
+
+注意：grad在反向传播过程中是累加的(accumulated)，这意味着每一次运行反向传播，梯度都会累加之前的梯度，所以一般在反向传播之前需把梯度清零。
+
+``` python
+# 再来反向传播一次，注意grad是累加的
+out2 = x.sum()
+out2.backward()
+print(x.grad)
+
+out3 = x.sum()
+x.grad.data.zero_()
+out3.backward()
+print(x.grad)
+```
+
+输出：
+
+```
+tensor([[5.5000, 5.5000],
+        [5.5000, 5.5000]])
+tensor([[1., 1.],
+        [1., 1.]])
+```
+
+> 现在我们解释之前留下的问题，为什么在`y.backward()`时，如果`y`是标量，则不需要为`backward()`传入任何参数；否则，需要传入一个与`y`同形的`Tensor`?
+> 简单来说就是为了避免向量（甚至更高维张量）对张量求导，而转换成标量对张量求导。举个例子，假设形状为 `m x n` 的矩阵 X 经过运算得到了 `p x q` 的矩阵 Y，Y 又经过运算得到了 `s x t` 的矩阵 Z。那么按照前面讲的规则，dZ/dY 应该是一个 `s x t x p x q` 四维张量，dY/dX 是一个 `p x q x m x n`的四维张量。问题来了，怎样反向传播？怎样将两个四维张量相乘？？？这要怎么乘？？？就算能解决两个四维张量怎么乘的问题，四维和三维的张量又怎么乘？导数的导数又怎么求，这一连串的问题，感觉要疯掉…… 
+> 为了避免这个问题，我们**不允许张量对张量求导，只允许标量对张量求导，求导结果是和自变量同形的张量**。所以必要时我们要把张量通过将所有张量的元素加权求和的方式转换为标量，举个例子，假设`y`由自变量`x`计算而来，`w`是和`y`同形的张量，则`y.backward(w)`的含义是：先计算`l = torch.sum(y * w)`，则`l`是个标量，然后求`l`对自变量`x`的导数。
+> [参考](https://zhuanlan.zhihu.com/p/29923090)
+
+来看一些实际例子。
+
+``` python
+x = torch.tensor([1.0, 2.0, 3.0, 4.0], requires_grad=True)
+y = 2 * x
+z = y.view(2, 2)
+print(z)
+```
+
+输出：
+
+```
+tensor([[2., 4.],
+        [6., 8.]], grad_fn=<ViewBackward>)
+```
+
+现在 `y` 不是一个标量，所以在调用`backward`时需要传入一个和`y`同形的权重向量进行加权求和得到一个标量。
+
+``` python
+v = torch.tensor([[1.0, 0.1], [0.01, 0.001]], dtype=torch.float)
+z.backward(v)
+print(x.grad)
+```
+
+输出：
+
+```
+tensor([2.0000, 0.2000, 0.0200, 0.0020])
+```
+
+注意，`x.grad`是和`x`同形的张量。
+
+再来看看中断梯度追踪的例子：
+
+``` python
+x = torch.tensor(1.0, requires_grad=True)
+y1 = x ** 2 
+with torch.no_grad():
+    # 该范围内的张量都不具有梯度
+    y2 = x ** 3
+y3 = y1 + y2
+    
+print(x.requires_grad)
+print(y1, y1.requires_grad) # True
+print(y2, y2.requires_grad) # False
+print(y3, y3.requires_grad) # True
+```
+
+输出：
+
+```
+True
+tensor(1., grad_fn=<PowBackward0>) True
+tensor(1.) False
+tensor(2., grad_fn=<ThAddBackward>) True
+```
+
+可以看到，上面的`y2`是没有`grad_fn`而且`y2.requires_grad=False`的，而`y3`是有`grad_fn`的。如果我们将`y3`对`x`求梯度的话会是多少呢？
+
+``` python
+y3.backward()
+print(x.grad)
+```
+
+输出：
+
+```
+tensor(2.)
+```
+
+为什么是2呢？$ y_3 = y_1 + y_2 = x^2 + x^3$，当 $x=1$ 时 $\frac {dy_3} {dx}$ 不应该是5吗？事实上，由于 $y_2$ 的定义是被`torch.no_grad():`包裹的，所以与 $y_2$ 有关的梯度是不会回传的，只有与 $y_1$ 有关的梯度才会回传，即 $x^2$ 对 $x$ 的梯度。
+
+上面提到，`y2.requires_grad=False`，所以不能调用 `y2.backward()`，会报错：
+
+```
+RuntimeError: element 0 of tensors does not require grad and does not have a grad_fn
+```
+
+此外，如果我们想要修改`tensor`的数值，但是又不希望被`autograd`记录（即不会影响反向传播），那么我们可以对`tensor.data`进行操作。
+
+``` python
+x = torch.ones(1,requires_grad=True)
+
+print(x.data) # 还是一个tensor
+print(x.data.requires_grad) # 但是已经是独立于计算图之外
+
+y = 2 * x
+x.data *= 100 # 只改变了值，不会记录在计算图，所以不会影响梯度传播
+
+y.backward()
+print(x) # 更改data的值也会影响tensor的值
+print(x.grad)
+```
+
+输出：
+
+```
+tensor([1.])
+False
+tensor([100.], requires_grad=True)
+tensor([2.])
+```
+
+
+
+#### 二、深度学习基础
+
+
+
+
+
+
+
+#### 三、深度学习计算
+
+
+
+
+
+
+
+
+
+
+
+
+
+#### 四、搭建神经网络模型
 
 1.全连接网络模型
 
