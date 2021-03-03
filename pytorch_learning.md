@@ -56,6 +56,115 @@ if torch.cuda.is_available():
 tmp = inputs.cpu() # Tensor转换为CPU上的数据类型
 ```
 
+用`torch.cuda.is_available()`查看GPU是否可用:
+
+``` python
+import torch
+from torch import nn
+
+torch.cuda.is_available() # 输出 True
+```
+
+查看GPU数量：
+
+``` python
+torch.cuda.device_count() # 输出 1
+```
+
+查看当前GPU索引号，索引号从0开始：
+
+``` python
+torch.cuda.current_device() # 输出 0
+```
+
+根据索引号查看GPU名字:
+
+``` python
+torch.cuda.get_device_name(0) # 输出 'GeForce GTX 1050'
+```
+
+默认情况下，`Tensor`会被存在内存上。因此，之前我们每次打印`Tensor`的时候看不到GPU相关标识。
+
+``` python
+x = torch.tensor([1, 2, 3])
+x
+```
+
+输出：
+
+```
+tensor([1, 2, 3])
+```
+
+使用`.cuda()`可以将CPU上的`Tensor`转换（复制）到GPU上。如果有多块GPU，我们用`.cuda(i)`来表示第 $i$ 块GPU及相应的显存（$i$从0开始）且`cuda(0)`和`cuda()`等价。
+
+``` python
+x = x.cuda(0)
+x
+```
+
+输出：
+
+```
+tensor([1, 2, 3], device='cuda:0')
+```
+
+我们可以通过`Tensor`的`device`属性来查看该`Tensor`所在的设备。
+
+```python
+x.device
+```
+
+输出：
+
+```
+device(type='cuda', index=0)
+```
+
+我们可以直接在创建的时候就指定设备。
+
+``` python
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+x = torch.tensor([1, 2, 3], device=device)
+# or
+x = torch.tensor([1, 2, 3]).to(device)
+x
+```
+
+输出：
+
+```
+tensor([1, 2, 3], device='cuda:0')
+```
+
+如果对在GPU上的数据进行运算，那么结果还是存放在GPU上。
+
+``` python
+y = x**2
+y
+```
+
+输出：
+
+```
+tensor([1, 4, 9], device='cuda:0')
+```
+
+需要注意的是，存储在不同位置中的数据是不可以直接进行计算的。即存放在CPU上的数据不可以直接与存放在GPU上的数据进行运算，位于不同GPU上的数据也是不能直接进行计算的。
+
+``` python
+z = y + x.cpu()
+```
+
+会报错:
+
+```
+RuntimeError: Expected object of type torch.cuda.LongTensor but found type torch.LongTensor for argument #3 'other'
+```
+
+## 
+
 （2）张量的拆分：torch.split()和torch.chunk()
 
 1)torch.split(size,dim=0)
@@ -579,31 +688,391 @@ tensor([2.])
 
 
 
-#### 二、深度学习基础
+7.读写tensor
+
+可以直接使用`save`函数和`load`函数分别存储和读取`Tensor`。`save`使用Python的pickle实用程序将对象进行序列化，然后将序列化的对象保存到disk，使用`save`可以保存各种对象,包括模型、张量和字典等。而`laod`使用pickle unpickle工具将pickle的对象文件反序列化为内存。
+
+下面的例子创建了`Tensor`变量`x`，并将其存在文件名同为`x.pt`的文件里。
+
+``` python
+import torch
+from torch import nn
+
+x = torch.ones(3)
+torch.save(x, 'x.pt')
+```
+
+然后我们将数据从存储的文件读回内存。
+
+``` python
+x2 = torch.load('x.pt')
+x2
+```
+
+输出：
+
+```
+tensor([1., 1., 1.])
+```
+
+我们还可以存储一个`Tensor`列表并读回内存。
+
+``` python
+y = torch.zeros(4)
+torch.save([x, y], 'xy.pt')
+xy_list = torch.load('xy.pt')
+xy_list
+```
+
+输出：
+
+```
+[tensor([1., 1., 1.]), tensor([0., 0., 0., 0.])]
+```
+
+存储并读取一个从字符串映射到`Tensor`的字典。
+
+``` python
+torch.save({'x': x, 'y': y}, 'xy_dict.pt')
+xy = torch.load('xy_dict.pt')
+xy
+```
+
+输出：
+
+```
+{'x': tensor([1., 1., 1.]), 'y': tensor([0., 0., 0., 0.])}
+```
+
+
+
+再给出一段用json序列化torch.Tensor的代码（json并不能序列化torch.Tensor，需要定义函数）：
+
+```python
+import torch
+import json
+import numpy as np
+
+
+a = torch.rand([5,3])
+# print(a)
+# print(isinstance(a, torch.Tensor)) # True
+
+def tensor2list(t):
+    if isinstance(t, torch.Tensor):
+        # torch.Tensor需要先转换成numpy，然后转换成list才可以通过list序列化
+        return t.numpy().tolist()
+
+def list2tensor(l):
+    if isinstance(l, list):
+        l1 = np.array(l)
+        l2 = torch.from_numpy(l1)
+        return l2
+
+
+json_str = json.dumps(a, default=tensor2list)
+# print(type(json_str)) # <class 'str'>
+test_list = json.loads(json_str)
+# print(type(test_list)) # <class 'list'>
+
+with open('./test.json', 'w') as f:
+    json.dump(a, f, default=tensor2list)
+
+with open('./test.json', 'r') as f:
+    test_list = json.load(f)
+print(type(test_list)) # list
+
+with open('./test.json', 'r') as f:
+    test_tensor = json.load(f, object_hook=list2tensor)
+print(type(test_tensor)) # list, 由于列表中还嵌套列表，这里定义的list2tensor并不能满足将所有的list都转换为np.array(),所以没有成功转换为torch.Tensor
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+#### 二、pytorch模型构建基础
 
 1.使用pytorch搭建一个线性回归模型，代码见工程文件/code/learn_pytorch/regression。
 
+2.继承Module类来构建模型
+
+`Module`类是`nn`模块里提供的一个模型构造类，是所有神经网络模块的基类，我们可以继承它来定义我们想要的模型。下面继承`Module`类构造本节开头提到的多层感知机。**这里定义的`MLP`类重载了`Module`类的`__init__`函数和`forward`函数。它们分别用于创建模型参数和定义前向计算**，前向计算也即正向传播。
+
+``` python
+import torch
+from torch import nn
+
+class MLP(nn.Module):
+    # 声明带有模型参数的层，这里声明了两个全连接层
+    def __init__(self, **kwargs):
+        # 调用MLP父类Block的构造函数来进行必要的初始化。这样在构造实例时还可以指定其他函数
+        # 参数，如“模型参数的访问、初始化和共享”一节将介绍的模型参数params
+        super(MLP, self).__init__(**kwargs)
+        self.hidden = nn.Linear(784, 256) # 隐藏层
+        self.act = nn.ReLU()
+        self.output = nn.Linear(256, 10)  # 输出层
+         
+
+    # 定义模型的前向计算，即如何根据输入x计算返回所需要的模型输出
+    def forward(self, x):
+        a = self.act(self.hidden(x))
+        return self.output(a)
+```
+
+以上的`MLP`类中无须定义反向传播函数。系统将通过自动求梯度而自动生成反向传播所需的`backward`函数。
+
+我们可以实例化`MLP`类得到模型变量`net`。下面的代码初始化`net`并传入输入数据`X`做一次前向计算。其中，`net(X)`会调用`MLP`继承自`Module`类的`__call__`函数，这个函数将调用`MLP`类定义的`forward`函数来完成前向计算。
+
+``` python
+X = torch.rand(2, 784)
+net = MLP()
+print(net)
+net(X)
+```
+
+输出：
+
+```
+MLP(
+  (hidden): Linear(in_features=784, out_features=256, bias=True)
+  (act): ReLU()
+  (output): Linear(in_features=256, out_features=10, bias=True)
+)
+tensor([[-0.1798, -0.2253,  0.0206, -0.1067, -0.0889,  0.1818, -0.1474,  0.1845,
+         -0.1870,  0.1970],
+        [-0.1843, -0.1562, -0.0090,  0.0351, -0.1538,  0.0992, -0.0883,  0.0911,
+         -0.2293,  0.2360]], grad_fn=<ThAddmmBackward>)
+```
+
+注意，这里并没有将`Module`类命名为`Layer`（层）或者`Model`（模型）之类的名字，这是因为该类是一个可供自由组建的部件。它的子类既可以是一个层（如PyTorch提供的`Linear`类），又可以是一个模型（如这里定义的`MLP`类），或者是模型的一个部分。我们下面通过两个例子来展示它的灵活性。
 
 
 
+3.Module的子类
+
+（1）`Sequential`类
+
+当模型的前向计算为简单串联各个层的计算时，`Sequential`类可以通过更加简单的方式定义模型。这正是`Sequential`类的目的：它可以接收一个子模块的有序字典（OrderedDict）或者一系列子模块作为参数来逐一添加`Module`的实例，而模型的前向计算就是将这些实例按添加的顺序逐一计算。
+
+下面我们实现一个与`Sequential`类有相同功能的`MySequential`类。这或许可以帮助读者更加清晰地理解`Sequential`类的工作机制。
+
+``` python
+class MySequential(nn.Module):
+    from collections import OrderedDict
+    def __init__(self, *args):
+        super(MySequential, self).__init__()
+        if len(args) == 1 and isinstance(args[0], OrderedDict): # 如果传入的是一个OrderedDict
+            for key, module in args[0].items():
+                self.add_module(key, module)  # add_module方法会将module添加进self._modules(一个OrderedDict)
+        else:  # 传入的是一些Module
+            for idx, module in enumerate(args):
+                self.add_module(str(idx), module)
+    def forward(self, input):
+        # self._modules返回一个 OrderedDict，保证会按照成员添加时的顺序遍历成
+        for module in self._modules.values():
+            input = module(input)
+        return input
+```
+
+我们用`MySequential`类来实现前面描述的`MLP`类，并使用随机初始化的模型做一次前向计算。
+
+``` python
+net = MySequential(
+        nn.Linear(784, 256),
+        nn.ReLU(),
+        nn.Linear(256, 10), 
+        )
+print(net)
+net(X)
+```
+
+输出：
+
+```
+MySequential(
+  (0): Linear(in_features=784, out_features=256, bias=True)
+  (1): ReLU()
+  (2): Linear(in_features=256, out_features=10, bias=True)
+)
+tensor([[-0.0100, -0.2516,  0.0392, -0.1684, -0.0937,  0.2191, -0.1448,  0.0930,
+          0.1228, -0.2540],
+        [-0.1086, -0.1858,  0.0203, -0.2051, -0.1404,  0.2738, -0.0607,  0.0622,
+          0.0817, -0.2574]], grad_fn=<ThAddmmBackward>)
+```
+
+可以观察到这里`MySequential`类的使用跟3.10节（多层感知机的简洁实现）中`Sequential`类的使用没什么区别。
+
+（2）`ModuleList`类
+
+`ModuleList`接收一个子模块的列表作为输入，然后也可以类似List那样进行append和extend操作:
+
+``` python
+net = nn.ModuleList([nn.Linear(784, 256), nn.ReLU()])
+net.append(nn.Linear(256, 10)) # # 类似List的append操作
+print(net[-1])  # 类似List的索引访问
+print(net)
+```
+
+输出：
+
+```
+Linear(in_features=256, out_features=10, bias=True)
+ModuleList(
+  (0): Linear(in_features=784, out_features=256, bias=True)
+  (1): ReLU()
+  (2): Linear(in_features=256, out_features=10, bias=True)
+)
+```
+
+（3）`ModuleDict`类
+
+`ModuleDict`接收一个子模块的字典作为输入, 然后也可以类似字典那样进行添加访问操作:
+
+``` python
+net = nn.ModuleDict({
+    'linear': nn.Linear(784, 256),
+    'act': nn.ReLU(),
+})
+net['output'] = nn.Linear(256, 10) # 添加
+print(net['linear']) # 访问
+print(net.output)
+print(net)
+```
+
+输出：
+
+```
+Linear(in_features=784, out_features=256, bias=True)
+Linear(in_features=256, out_features=10, bias=True)
+ModuleDict(
+  (act): ReLU()
+  (linear): Linear(in_features=784, out_features=256, bias=True)
+  (output): Linear(in_features=256, out_features=10, bias=True)
+)
+```
+
+## 
+
+4.访问模型参数
+
+定义一个网络：
+
+``` python
+import torch
+from torch import nn
+from torch.nn import init
+
+net = nn.Sequential(nn.Linear(4, 3), nn.ReLU(), nn.Linear(3, 1))  # pytorch已进行默认初始化
+
+print(net)
+X = torch.rand(2, 4)
+Y = net(X).sum()
+```
+
+输出：
+
+```
+Sequential(
+  (0): Linear(in_features=4, out_features=3, bias=True)
+  (1): ReLU()
+  (2): Linear(in_features=3, out_features=1, bias=True)
+)
+```
+
+`Sequential`类继承`Module`类，对于`Sequential`实例中含模型参数的层，我们可以通过`Module`类的`parameters()`或者`named_parameters`方法来访问所有参数（以迭代器的形式返回），后者除了返回参数`Tensor`外还会返回其名字。下面，访问多层感知机`net`的所有参数：
+
+``` python
+print(type(net.named_parameters()))
+for name, param in net.named_parameters():
+    print(name, param.size())
+```
+
+输出：
+
+```
+<class 'generator'>
+0.weight torch.Size([3, 4])
+0.bias torch.Size([3])
+2.weight torch.Size([1, 3])
+2.bias torch.Size([1])
+```
+
+可见返回的名字自动加上了层数的索引作为前缀。
+我们再来访问`net`中单层的参数。对于使用`Sequential`类构造的神经网络，我们可以通过方括号`[]`来访问网络的任一层。索引0表示隐藏层为`Sequential`实例最先添加的层。
+
+``` python
+for name, param in net[0].named_parameters():
+    print(name, param.size(), type(param))
+```
+
+输出：
+
+```
+weight torch.Size([3, 4]) <class 'torch.nn.parameter.Parameter'>
+bias torch.Size([3]) <class 'torch.nn.parameter.Parameter'>
+```
+
+因为这里是单层的所以没有了层数索引的前缀。另外返回的`param`的类型为`torch.nn.parameter.Parameter`，其实这是`Tensor`的子类，和`Tensor`不同的是如果一个`Tensor`是`Parameter`，那么它会自动被添加到模型的参数列表里，来看下面这个例子。
+
+``` python
+class MyModel(nn.Module):
+    def __init__(self, **kwargs):
+        super(MyModel, self).__init__(**kwargs)
+        self.weight1 = nn.Parameter(torch.rand(20, 20))
+        self.weight2 = torch.rand(20, 20)
+    def forward(self, x):
+        pass
+    
+n = MyModel()
+for name, param in n.named_parameters():
+    print(name)
+```
+
+输出:
+
+```
+weight1
+```
+
+上面的代码中`weight1`在参数列表中但是`weight2`却没在参数列表中。
+
+因为`Parameter`是`Tensor`，即`Tensor`拥有的属性它都有，比如可以根据`data`来访问参数数值，用`grad`来访问参数梯度。
+
+``` python
+weight_0 = list(net[0].parameters())[0]
+print(weight_0.data)
+print(weight_0.grad) # 反向传播前梯度为None
+Y.backward()
+print(weight_0.grad)
+```
+
+输出：
+
+```
+tensor([[ 0.2719, -0.0898, -0.2462,  0.0655],
+        [-0.4669, -0.2703,  0.3230,  0.2067],
+        [-0.2708,  0.1171, -0.0995,  0.3913]])
+None
+tensor([[-0.2281, -0.0653, -0.1646, -0.2569],
+        [-0.1916, -0.0549, -0.1382, -0.2158],
+        [ 0.0000,  0.0000,  0.0000,  0.0000]])
+```
+
+## 
 
 
 
-#### 三、深度学习计算
-
-
-
-
-
-
-
-
-
-
-
-
-
-#### 四、搭建神经网络模型
+#### 三、搭建常用神经网络模型
 
 1.全连接网络模型
 
@@ -743,9 +1212,9 @@ class CNN(nn.Module):
         self.fc = nn.Sequential(
             nn.Linear(50*5*5,1024),
             nn.ReLU(inplace=True),
-            nn.Liear(1024,128),
+            nn.Linear(1024,128),
             nn.ReLU(inplace=True),
-            nn.Liear(128,10))
+            nn.Linear(128,10))
         
 def forward(self, x):
     x = self.layer1(x)
@@ -1439,11 +1908,11 @@ Layer
 
 6.GhostNet
 
-（4,5,6代码见repo：" https://github.com/fourierer/Learn_GhostNet_pytorch "）
+（5,6,7代码见repo：" https://github.com/fourierer/Learn_GhostNet_pytorch "）
 
 
 
-6.使用训好的模型来测试单个图像和视频
+7.使用训好的模型来测试单个图像和视频
 
 （1）测试图像
 
@@ -1917,12 +2386,6 @@ if __name__ == '__main__':
         if name=='classifer.weight':
             print(param[0][2])
 ```
-
-
-
-
-
-### Tensorflow
 
 
 
