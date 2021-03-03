@@ -581,7 +581,7 @@ tensor([2.])
 
 #### 二、深度学习基础
 
-使用pytorch搭建一个线性回归训练模型
+1.使用pytorch搭建一个线性回归模型，代码见工程文件/code/learn_pytorch/regression。
 
 
 
