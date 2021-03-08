@@ -953,7 +953,7 @@ ModuleDict(
 )
 ```
 
-## 
+
 
 4.访问模型参数
 
@@ -1230,9 +1230,125 @@ def forward(self, x):
 
 （1）Alexnet
 
+```python
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import torchvision
+
+
+class AlexNet(nn.Module):
+    def __init__(self, num_outputs):
+        super(AlexNet, self).__init__()
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(1, 96, 11, 4),
+            nn.ReLU(),
+            nn.MaxPool2d(3,2),
+        )
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(96, 256, 5, 1, 2),
+            nn.ReLU(),
+            nn.MaxPool2d(3, 2)
+        )
+        self.conv3 = nn.Sequential(
+            nn.Conv2d(256, 384, 3, 1, 1),
+            nn.ReLU(),
+        )
+        self.conv4 = nn.Sequential(
+            nn.Conv2d(384, 384, 3, 1, 1),
+            nn.ReLU(),
+        )
+        self.conv5 = nn.Sequential(
+            nn.Conv2d(384, 256, 3, 1, 1),
+            nn.ReLU(),
+            nn.MaxPool2d(3, 2),
+        )
+        self.fc = nn.Sequential(
+            nn.Linear(256*5*5, 4096),
+            nn.ReLU(),
+            nn.Dropout(0.5),
+            nn.Linear(4096, 4096),
+            nn.ReLU(),
+            nn.Dropout(0.5),
+            nn.Linear(4096, num_outputs)
+        )
+
+    def forward(x):
+        x = self.conv1(x)
+        x = self.conv2(x)
+        x = self.conv3(x)
+        x = self.conv4(x)
+        x = self.conv5(x)
+
+        y = x.view(x.size(0), -1) # 将卷积层的特征拉成batch_size行的张量
+        output = self.fc(y)
+        return y
+
+
+if __name__=='__main__':
+    model = AlexNet(10)
+    print(model)
+```
+
+
+
 （2）Vgg
 
-（3）GoogleNet
+```python
+
+```
+
+
+
+（3）GoogLeNet（给出Inception模块的代码，整体结构略去）
+
+```python
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+
+
+class Inception(nn.Module):
+    def __init__(self, in_c, c1, c2, c3, c4):
+        super(Inception, self).__init__()
+        # 线路1，单1 x 1卷积层
+        self.p1_1 = nn.Conv2d(in_c, c1, kernel_size=1)
+
+        # 线路2，1 x 1卷积层后接3 x 3卷积层
+        self.p2_1 = nn.Conv2d(in_c, c2[0], kernel_size=1)
+        self.p2_2 = nn.Conv2d(c2[0], c2[1], kernel_size=3, padding=1)
+
+        # 线路3，1 x 1卷积层后接5 x 5卷积
+        self.p3_1 = nn.Conv2d(in_c, c3[0], kernel_size=1)
+        self.p3_2 = nn.Conv2d(c3[0], c3[1], kernel_size=5, padding=2)
+
+        # 线路4，3 x 3最大池化层后接1 x 1卷积层
+        self.p4_1 = nn.MaxPool2d(kernel_size=3, stride=1, padding=1)
+        self.p4_2 = nn.Conv2d(in_c, c4, kernel_size=1)
+
+    def forward(self, x):
+        p1 = F.relu(self.p1_1)
+        p2 = F.relu(self.p2_2(F.relu(self.p2_1(x))))
+        p3 = F.relu(self.p3_2(F.relu(self.p3_1(x))))
+        p4 = F.relu(self.p4_2(self.p4_1(x)))
+        output = torch.cat((p1, p2, p3, p4), dim = 1) # 在通道维上连接输出
+
+        return output
+
+if __name__=='__main__':
+    in_c = 64
+    c1 = 64
+    c2 = [64, 64]
+    c3 = [64, 64]
+    c4 = 64
+    model = Inception(in_c, c1, c2, c3, c4)
+    print(model)
+
+
+```
+
+
 
 （4）ResNet
 
