@@ -2018,13 +2018,25 @@ Layer
 
 （5）DenseNet
 
-（6）MobileNetV2
 
-（7）ShuffleNetV2
 
-（8）GhostNet
+（6）MobileNetV1
 
-（6,7,8代码见repo：" https://github.com/fourierer/Learn_GhostNet_pytorch "）
+```python
+
+```
+
+
+
+（7）MobileNetV2
+
+（8）MobileNetV3
+
+（9）ShuffleNetV2
+
+（10）GhostNet
+
+（轻量级网络系列代码见repo：" https://github.com/fourierer/Learn_GhostNet_pytorch "）
 
 
 
