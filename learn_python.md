@@ -146,7 +146,18 @@ print(json_str) # {"a": {"a": [1, 2]}, "b": {"name": "Bob", "age": 20, "score": 
 
 
 
+#### 四、字符串分割
 
+1.split：返回一个列表，列表中的元素是分隔符前后的字符串。
+
+2.partition和repartition：返回一个三元组，利用分割符将目标字符串分割为两个部分，同时包含分隔符。两个函数的差别在于后者从目标字符串的末尾也就是右边开始搜索字符串。
+
+```python
+str_test = 'os.path.join'
+print(str_test.split('.')) # ['os', 'path', 'join']
+print(str_test.partition('.')) # ('os', '.', 'path.join')
+print(str_test.rpartition('.')) # ('os.path', '.', 'join')
+```
 
 
 
