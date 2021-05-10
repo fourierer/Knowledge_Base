@@ -163,3 +163,7 @@ print(str_test.rpartition('.')) # ('os.path', '.', 'join')
 
 
 
+#### 五、import和\_\_import\_\_
+
+见/code/learn_python/learn_import文件夹。
+
