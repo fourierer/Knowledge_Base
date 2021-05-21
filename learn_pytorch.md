@@ -906,7 +906,7 @@ tensor([[-0.0100, -0.2516,  0.0392, -0.1684, -0.0937,  0.2191, -0.1448,  0.0930,
 
 （2）`ModuleList`类
 
-`ModuleList`接收一个子模块的列表作为输入，然后也可以类似List那样进行append和extend操作:
+`ModuleList`接收一个子模块的**列表**(一定是列表，不能像Sequential那样直接添加模块)作为输入，然后也可以类似List那样进行append和extend操作:
 
 ``` python
 net = nn.ModuleList([nn.Linear(784, 256), nn.ReLU()])
@@ -926,7 +926,131 @@ ModuleList(
 )
 ```
 
-（3）`ModuleDict`类
+
+
+（3）nn.ModuleList和nn.Sequential的区别
+
+定义如下网络：
+
+```python
+import torch
+import torch.nn as nn
+
+class Net(nn.Module):
+    def __init__(self, in_dim=100, hidden_dim=50, out_dim=10):
+        super(Net, self).__init__()
+        self.layer = nn.ModuleList([
+            nn.Linear(in_dim, hidden_dim),
+            nn.BatchNorm1d(hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, out_dim)
+        ])
+    def forward(self, x):
+        x = self.layer(x)
+        # for f in self.layer:
+            # x = f(x)
+        return x
+
+if __name__=='__main__':
+    model = Net()
+    x = torch.ones(2,100)
+    # 网络中有BN层，在输入时应当输入两个或以上的样本
+    # 如果输入x = torch.ones(1,100)时会报错
+    y = model(x)
+    print(y)
+```
+
+报错：
+
+```python
+Traceback (most recent call last):
+  File "Modulelist_Sequential.py", line 24, in <module>
+    y = model(x)
+  File "/home/sunzheng/anaconda3/envs/pytorch12_cuda10/lib/python3.7/site-packages/torch/nn/modules/module.py", line 547, in __call__
+    result = self.forward(*input, **kwargs)
+  File "Modulelist_Sequential.py", line 14, in forward
+    x = self.layer(x)
+  File "/home/sunzheng/anaconda3/envs/pytorch12_cuda10/lib/python3.7/site-packages/torch/nn/modules/module.py", line 547, in __call__
+    result = self.forward(*input, **kwargs)
+  File "/home/sunzheng/anaconda3/envs/pytorch12_cuda10/lib/python3.7/site-packages/torch/nn/modules/module.py", line 103, in forward
+    raise NotImplementedError
+NotImplementedError
+```
+
+**这是因为nn.ModuleList是一个无序性的序列，并没有实现forward方法，即在自己定义的forword函数里面不能直接使用x = self.layer(x)来实现forward函数。**
+
+需要改成如下定义方法：
+
+```python
+def forward(self, x):
+    for f in self.layer:
+        x = f(x)
+    return x
+```
+
+或者直接使用nn.Sequential来定义网络：
+
+```python
+import torch
+import torch.nn as nn
+
+class Net(nn.Module):
+    def __init__(self, in_dim=100, hidden_dim=50, out_dim=10):
+        super(Net, self).__init__()
+        self.layer = nn.Sequential(
+            nn.Linear(in_dim, hidden_dim),
+            nn.BatchNorm1d(hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, out_dim)
+        )
+    def forward(self, x):
+        x = self.layer(x)
+        # for f in self.layer:
+            # x = f(x)
+        return x
+
+if __name__=='__main__':
+    model = Net()
+    x = torch.ones(2,100)
+    # 网络中有BN层，在输入时应当输入两个或以上的样本
+    # 如果输入x = torch.ones(1,100)时会报错
+    y = model(x)
+    print(y)
+```
+
+**nn.Sequential直接接收nn.Module模块作为参数，而不是用列表，并且nn.Sequential定义的网络中各层会按照定义的顺序进行级联，因此需要保证各层的输入和输出之间要衔接，并且nn.Sequential实现了forward方法，可以直接通过x = self.layer(x)的方法实现forward，也可以像nn.ModuleList那样使用for循环来实现forward函数：**
+
+```python
+import torch
+import torch.nn as nn
+
+class Net(nn.Module):
+    def __init__(self, in_dim=100, hidden_dim=50, out_dim=10):
+        super(Net, self).__init__()
+        self.layer = nn.Sequential(
+            nn.Linear(in_dim, hidden_dim),
+            nn.BatchNorm1d(hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, out_dim)
+        )
+    def forward(self, x):
+        # x = self.layer(x)
+        for f in self.layer:
+            x = f(x)
+        return x
+
+if __name__=='__main__':
+    model = Net()
+    x = torch.ones(2,100)
+    # 网络中有BN层，在输入时应当输入两个或以上的样本
+    # 如果输入x = torch.ones(1,100)时会报错
+    y = model(x)
+    print(y)
+```
+
+
+
+（4）`ModuleDict`类
 
 `ModuleDict`接收一个子模块的字典作为输入, 然后也可以类似字典那样进行添加访问操作:
 
@@ -1014,7 +1138,7 @@ weight torch.Size([3, 4]) <class 'torch.nn.parameter.Parameter'>
 bias torch.Size([3]) <class 'torch.nn.parameter.Parameter'>
 ```
 
-因为这里是单层的所以没有了层数索引的前缀。另外返回的`param`的类型为`torch.nn.parameter.Parameter`，其实这是`Tensor`的子类，和`Tensor`不同的是如果一个`Tensor`是`Parameter`，那么它会自动被添加到模型的参数列表里，来看下面这个例子。
+因为这里是单层的所以没有了层数索引的前缀。**另外返回的`param`的类型为`torch.nn.parameter.Parameter`，其实这是`Tensor`的子类，和`Tensor`不同的是如果一个`Tensor`是`Parameter`，那么它会自动被添加到模型的参数列表里**，来看下面这个例子。
 
 ``` python
 class MyModel(nn.Module):
@@ -1060,7 +1184,130 @@ tensor([[-0.2281, -0.0653, -0.1646, -0.2569],
         [ 0.0000,  0.0000,  0.0000,  0.0000]])
 ```
 
-## 
+
+
+5.模型中tensor,parameter与buffer的区别
+
+在前四部分介绍了一些pytorch网络的基本知识，这部分再介绍两个不太常见的知识点。
+
+pytorch保存模型是将网络中的参数保存为OrderedDict类型，这里的参数一般包含两种类型，一种是各种module中包含的参数，即nn.parameter，当然也可以不通过module模块直接网络中定义nn.parameter参数；另一种是buffer；前者每次optim.step会得到更新，而不会更新后者。
+
+（1）model.state_dict()函数
+
+当定义好一个网络model时，可以调用model.state_dict()函数返回OrderedDict类型的变量，该变量以键值对的形式保存模型中需要保存的参数，包括parameter和buffer，可以通过该函数来查看网络中有哪些parameter和buffer；
+
+（2）parameter和buffer
+
+parameter的创建方式有两种，一种是直接通过nn.Paramter()创建模型的成员变量(self.xxx)，会自动注册到parameters中；第二种是通过nn.Parameter()创建普通的Parameter对象，不作为模型的成员变量，然后将Parameter对象通过register_parameters()注册。这两种创建的参数都可以通过model.parameters()返回，并且会自动保存到OrderedDict当中；
+
+buffer的创建需要先创建tensor，然后tensor通过register_buffer()进行注册，可以通过model.buffers()返回，注册完的参数也会自动保存到OrderedDict中。
+
+具体代码如下：
+
+```python
+import torch
+import torch.nn as nn
+
+
+class Net(nn.Module):
+    def __init__(self, in_dim=3, hidden_dim=3, out_dim=2):
+        super(Net, self).__init__()
+        self.block = nn.Sequential(nn.Linear(in_dim, hidden_dim), nn.ReLU(), nn.Linear(hidden_dim, out_dim))
+        self.A = torch.Tensor(3,5)
+        self.B = nn.Parameter(self.A)
+        # 或者如下定义parameter参数
+        # param = nn.Parameter(self.A)
+        # self.register_parameter('B', param)
+        self.register_buffer('C', self.A)
+    
+    def forward(self, x):
+        x = self.block(x)
+        return x
+
+if __name__=='__main__':
+    model = Net()
+
+
+    # 访问模型中的parameter类型的参数，包括参数名
+    for name, param in model.named_parameters():
+        print(name, type(param))
+    # 输出如下，从输出结果中可以看出，网络中定义的参数都是torch.nn.parameter.Parameter类，
+    # 而其中的buffer类型或者tensor类型的变量都不在模型的参数列表中
+    '''
+    B <class 'torch.nn.parameter.Parameter'>
+    block.0.weight <class 'torch.nn.parameter.Parameter'>
+    block.0.bias <class 'torch.nn.parameter.Parameter'>
+    block.2.weight <class 'torch.nn.parameter.Parameter'>
+    block.2.bias <class 'torch.nn.parameter.Parameter'>
+    '''
+
+
+    # 访问模型中的parameter参数，不包括参数名
+    for param in model.parameters():
+        print(param)
+    # 输出如下，只有参数，没有参数名
+    '''
+    Parameter containing:
+tensor([[1.9514e-19, 1.8314e+25, 6.9768e+22, 4.0069e+24, 2.7088e+23],
+        [1.9435e-19, 7.2127e+22, 4.7428e+30, 4.6534e+33, 1.7753e+28],
+        [1.3458e-14, 6.4610e+19, 2.0618e-19, 1.8545e+25, 6.9767e+22]],
+       requires_grad=True)
+Parameter containing:
+tensor([[ 0.3812,  0.0515, -0.5280],
+        [-0.0494,  0.3105, -0.1022],
+        [-0.4689,  0.3737, -0.4375]], requires_grad=True)
+Parameter containing:
+tensor([ 0.3313, -0.3482,  0.0369], requires_grad=True)
+Parameter containing:
+tensor([[ 0.4688,  0.5602, -0.0133],
+        [-0.1683,  0.1731,  0.4286]], requires_grad=True)
+Parameter containing:
+tensor([ 0.1057, -0.0223], requires_grad=True)
+    '''
+
+
+    # 访问模型中的buffer参数,同样有buffers()与named_buffers()，区别是是否输出buffer的变量名
+    for buffer in model.named_buffers():
+        print(buffer)
+    
+    
+    # 访问模型中所有的参数，包括parameter和buffer
+    print(type(model.state_dict())) # <class 'collections.OrderedDict'>
+    print(model.state_dict())
+    # for k, v in model.state_dict().items():
+        # print(k,v)
+```
+
+两个问题：
+
+（1）为何不直接将不需要进行参数修改的变量作为模型类的成员变量就好了，而是需要注册为buffer?
+
+（2）为什么不把参数都设置为nn.Parameter类型，然后将不需要更新的参数设置为requires_grad=False?（即buffer和不更新梯度的parameter有何区别？）
+
+问题（2）还未知，个人觉得应该只是parameter和buffer在参数划分上有一些重叠。对于问题（1），不进行注册的成员变量，就无法保存到OrderedDict，也就无法保存下来，并且模型参数在进行CPU-GPU之间的移动时，注册后的参数可以进行设备间的移动。代码如下：
+
+```python
+import torch
+import torch.nn as nn
+
+class MyModel(nn.Module):
+    def __init__(self):
+        super(MyModel, self).__init__()
+        self.my_tensor = torch.randn(1) # 参数直接作为模型类成员变量
+        self.register_buffer('my_buffer', torch.randn(1)) # 参数注册为 buffer
+        self.my_param = nn.Parameter(torch.randn(1))
+
+    def forward(self, x):
+            return x
+
+model = MyModel()
+print(model.state_dict())
+model.cuda()
+print(model.my_tensor)
+print(model.my_buffer)
+```
+
+
 
 
 

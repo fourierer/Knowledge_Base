@@ -39,3 +39,38 @@ logging.info('the detailed information of the operate system is:' + str(os.uname
 
 
 
+# OrderedDict
+# python中的字典一般是无序的，但是python中有个collection模块，里面自带了一个子类OrderedDict，实现了对字典对象元素的排序
+import collections
+
+print("Regular dictionary")
+d = {}
+d['a'] = 'A'
+d['b'] = 'B'
+d['c'] = 'C'
+for k, v in d.items():
+    print(k, v)
+
+print("\nOrder dictionary")
+d1 = collections.OrderedDict()
+d1['a'] = 'A'
+d1['b'] = 'B'
+d1['c'] = 'C'
+d1['1'] = '1'
+d1['2'] = '2'
+for k, v in d1.items():
+    print(k, v)
+'''
+输出：
+Regular dictionary
+a A
+c C
+b B
+
+Order dictionary
+a A
+b B
+c C
+1 1
+2 2
+'''
